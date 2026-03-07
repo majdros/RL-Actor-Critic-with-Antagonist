@@ -32,12 +32,12 @@ class EnvConfig:
     k_axis: float = 3.0
 
     # penalties
-    w_close: float = 120.0         # Scließ-Strafe [60, 120, 240]
-    w_degen: float = 40.0          # Degenerierung-Strafe
-    min_axis_ratio: float = 0.25  # tau
-    w_action: float = 0.0        # Energie-Strafe:[0.0, 0.01, 0.05] sum ||action||^2
+    w_close: float = 30.0          # Scließ-Strafe [30, 60, 120]
+    w_degen: float = 30.0          # Degenerierung-Strafe
+    min_axis_ratio: float = 0.25   # tau
+    w_action: float = 0.0          # Energie-Strafe:[0.0, 0.01, 0.05] sum ||action||^2
 
-    # antagonist (disturbance) strength: 0 => off
+    # antagonist (disturbance) strength
     adv_noise_scale: float = 0.0  # relative to max_delta
 
     # observation toggles
@@ -60,7 +60,7 @@ class FingerEllipseEnv(gym.Env):
 
     def __init__(self, cfg: EnvConfig = EnvConfig(),render_mode: Optional[str] = None):
         super().__init__()
-        assert cfg.horizon >= 16, "horizon should be >= 16 for stable ellipse estimation."
+        assert cfg.horizon >= 16, "horizon musss >= 16 für stabile Ellibse Schätzung."
 
         self.cfg = cfg
         self.render_mode = render_mode
@@ -68,28 +68,28 @@ class FingerEllipseEnv(gym.Env):
         # RNG (seed can be None)
         # self.np_random, _ = gym.utils.seeding.np_random(seed)
 
-        # Spaces
-        self.action_space = spaces.Box(
+        # Spaces: alle möglichen Aktionen, die der Agent in der Umgebung ausführen darf.
+        self.action_space = spaces.Box(             # kontinuierliches action
             low=-self.cfg.max_delta,
             high=+self.cfg.max_delta,
             shape=(3,),
             dtype=np.float32,
         )
 
-        obs_dim = 6  # sin/cos for 3 joints
+        obs_dim = 6  # sin/cos für 3 joints
 
-        reach = self.cfg.l1 + self.cfg.l2 + self.cfg.l3
+        self.reach = self.cfg.l1 + self.cfg.l2 + self.cfg.l3
         if self.cfg.include_xy:
             obs_dim += 2
         if self.cfg.include_phase:
             obs_dim += 1
 
-        # observation_space
+        # observation_space: Alle features skaliert zu [-1, 1]
         high = [1.0] * 6
         if self.cfg.include_xy:
-            high += [reach, reach]
+            high += [1.0, 1.0]      # normalized x, y
         if self.cfg.include_phase:
-            high += [1.0]
+            high += [1.0]           # phase in [0,1], allowed bound [-1,1]
         high = np.array(high, dtype=np.float32)
         self.observation_space = spaces.Box(low=-high, high=high, dtype=np.float32)
 
@@ -104,6 +104,7 @@ class FingerEllipseEnv(gym.Env):
         self.prev_area: float = 0.0
         self.action_energy_sum: float = 0.0
 
+
     # -----------------------------
     # Kinematics
     # -----------------------------
@@ -116,8 +117,10 @@ class FingerEllipseEnv(gym.Env):
         y = self.cfg.l1 * np.sin(th1) + self.cfg.l2 * np.sin(a12) + self.cfg.l3 * np.sin(a123)
         return np.array([x, y], dtype=np.float64)
 
+
     def clip_theta(self, theta: np.ndarray) -> np.ndarray:
         return np.clip(theta, self.cfg.theta_min, self.cfg.theta_max).astype(np.float64)
+
 
     def _obs(self) -> np.ndarray:
         parts = [
@@ -128,12 +131,13 @@ class FingerEllipseEnv(gym.Env):
 
         if self.cfg.include_xy:
             x, y = self.fingertip_xy(self.theta)
-            parts += [x, y]
+            parts += [x /self.reach, y /self.reach]
 
         if self.cfg.include_phase:
             parts += [self.t / float(self.cfg.horizon)]
 
         return np.array(parts, dtype=np.float32)
+
 
     # -----------------------------
     # Ellipse estimation (PCA proxy)
@@ -167,6 +171,7 @@ class FingerEllipseEnv(gym.Env):
         area_det = float(np.pi * (self.cfg.k_axis ** 2) * np.sqrt(detSigma))
         return area_det, a, b, detSigma
 
+
     def terminal_penalty(self) -> Tuple[float, Dict[str, Any]]:
         pts = self.traj[: self.t + 1]  # p0..pT
 
@@ -197,6 +202,7 @@ class FingerEllipseEnv(gym.Env):
         }
         return float(penalty), info
 
+
     # -----------------------------
     # Gym API
     # -----------------------------
@@ -210,7 +216,6 @@ class FingerEllipseEnv(gym.Env):
         self.t = 0
         self.action_energy_sum = 0.0
         self.prev_area = 0.0
-
         # Joints Initialisierung
         self.theta = self.np_random.uniform(self.cfg.theta_min, self.cfg.theta_max, size=(3,)).astype(np.float64)
 
@@ -221,6 +226,7 @@ class FingerEllipseEnv(gym.Env):
         obs = self._obs()
         info = {"fingertip_xy": p0.copy()}
         return obs, info
+
 
     def step(self, action: np.ndarray):
         action = np.asarray(action, dtype=np.float64).reshape(3,)
@@ -283,6 +289,7 @@ class FingerEllipseEnv(gym.Env):
 
         return obs, float(reward), terminated, truncated, info
 
+
     def render(self):
         # optional import: keeps env lightweight when not rendering
         import matplotlib.pyplot as plt
@@ -312,11 +319,11 @@ class FingerEllipseEnv(gym.Env):
 
 
 # -----------------------------
-# Minimal sanity check
+# TEST
 # -----------------------------
 def run_episode(seed):
     cfg = EnvConfig(horizon=128, adv_noise_scale=0.0)   #128 Environment-Horizon(Env. Ebene = maximale Episodenlänge) = 128. Rollout-Horizon (Parameter-Update) ist Training-Ebene
-    env = FingerEllipseEnv(cfg=cfg, render_mode='human')   # 'human'
+    env = FingerEllipseEnv(cfg=cfg, render_mode=None)   # 'human'
 
     # WICHTIG: beide RNGs seeden
     env.action_space.seed(seed)
@@ -328,7 +335,7 @@ def run_episode(seed):
     traj = []
 
     while not done:
-        action = env.action_space.sample()
+        action = env.action_space.sample()          # Zufällige Aktion erzeugen 
         obs, r, terminated, truncated, info = env.step(action)
         done = terminated or truncated
         ep_return += r
@@ -337,41 +344,19 @@ def run_episode(seed):
     return ep_return, np.array(traj), info
 
 def main():
-    # cfg = EnvConfig(horizon=128, adv_noise_scale=0.1)       
-    # env = FingerEllipseEnv(cfg=cfg, render_mode=None)
 
-    # obs, info = env.reset(seed=5)
-    # done = False
-    # ep_return = 0.0
-
-    # while not done:
-    #     action = env.action_space.sample()
-    #     obs, r, terminated, truncated, info = env.step(action)  
-    #     done = terminated or truncated
-    #     ep_return += r
-    #     # print(f"truncated:{truncated},  terminated:{terminated}")
-    # print("Episode return:", ep_return)
-    
-    # keys = [
-    #     "area_det_final", "ellipse_a_final", "ellipse_b_final",
-    #     "axis_ratio_b_over_a_final", "closure_dist2",
-    #     "penalty_close", "penalty_degen", "reward_terminal",
-    # ]
-    # print("Terminal metrics:", {k: info.get(k) for k in keys})
-
-
-    # # Run A
-    # ret1, traj1, info1 = run_episode(seed=None)
-    # # Run B
-    # ret2, traj2, info2 = run_episode(seed=None)
-
-    # print("Return identical:", np.isclose(ret1, ret2))
-    # print("Trajectory identical:", np.allclose(traj1, traj2))
-    # print("Terminal penalty identical:", np.isclose(info1["terminal_penalty"], info2["terminal_penalty"]))
-
-    for i in range(1):
+    for i in range(3):
         ep_return, traj, info = run_episode(seed=None)
-        print(f"{i+1} episode_return: {ep_return}, Ellipse_area: {info['area_det_final']}")
-        print('=' * 30)
+        ic(f"{i+1}. episode_return: {ep_return}, Ellipse_area: {info['area_det_final']}")
+        ic('=' * 30)
+        ic("return:", ep_return)
+        # ic("area:", info["area_det_final"])
+        # ic("closure_dist2:", info["closure_dist2"])
+        # ic("penalty_close:", info["penalty_close"])
+        # ic("penalty_degen:", info["penalty_degen"])
+        # ic("axis_ratio:", info["axis_ratio_b_over_a_final"])
+        # ic("terminal_penalty:", info["terminal_penalty"])
+        ic('=' * 30)
+
 if __name__ == "__main__":
     main()
