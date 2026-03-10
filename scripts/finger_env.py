@@ -8,9 +8,7 @@ import gymnasium as gym
 from gymnasium import spaces
 from icecream import ic
 
-# -----------------------------
 # Config
-# -----------------------------
 @dataclass
 class EnvConfig:
     # Rollout horizon (episode length)
@@ -19,10 +17,10 @@ class EnvConfig:
     # action is delta joint angles per step (rad)
     max_delta: float = 0.05  # rad ~ 2.8°
 
-    # link lengths (meters)
-    l1: float = 0.5
-    l2: float = 0.25
-    l3: float = 0.25
+    # link lengths (cm)
+    l1: float = 5.0
+    l2: float = 2.5
+    l3: float = 2.5
 
     # joint limits
     theta_min: float = -np.pi / 2
@@ -32,13 +30,13 @@ class EnvConfig:
     k_axis: float = 3.0
 
     # penalties
-    w_close: float = 30.0          # Scließ-Strafe [30, 60, 120]
-    w_degen: float = 30.0          # Degenerierung-Strafe
-    min_axis_ratio: float = 0.25   # tau
-    w_action: float = 0.0          # Energie-Strafe:[0.0, 0.01, 0.05] sum ||action||^2
+    w_close: float = 1.0          # Scließ-Strafe [0.5, 0.75, 1.0]
+    w_degen: float = 1.0          # Degenerierung-Strafe
+    min_axis_ratio: float = 0.25  # tau
+    w_action: float = 0.5        # Energie-Strafe:[0.0, 0.5, 1.0] sum ||action||^2
 
-    # antagonist (disturbance) strength
-    adv_noise_scale: float = 0.0  # relative to max_delta
+    # antagonist Stärke
+    adv_noise_scale: float = 0.0  # relative zu max_delta
 
     # observation toggles
     include_xy: bool = True
@@ -78,7 +76,7 @@ class FingerEllipseEnv(gym.Env):
 
         obs_dim = 6  # sin/cos für 3 joints
 
-        self.reach = self.cfg.l1 + self.cfg.l2 + self.cfg.l3
+        self.reichweite = self.cfg.l1 + self.cfg.l2 + self.cfg.l3
         if self.cfg.include_xy:
             obs_dim += 2
         if self.cfg.include_phase:
@@ -87,7 +85,7 @@ class FingerEllipseEnv(gym.Env):
         # observation_space: Alle features skaliert zu [-1, 1]
         high = [1.0] * 6
         if self.cfg.include_xy:
-            high += [1.0, 1.0]      # normalized x, y
+            high += [1.0, 1.0]      # normalisiert x, y
         if self.cfg.include_phase:
             high += [1.0]           # phase in [0,1], allowed bound [-1,1]
         high = np.array(high, dtype=np.float32)
@@ -105,9 +103,7 @@ class FingerEllipseEnv(gym.Env):
         self.action_energy_sum: float = 0.0
 
 
-    # -----------------------------
     # Kinematics
-    # -----------------------------
     def fingertip_xy(self, theta: np.ndarray) -> np.ndarray:
         th1, th2, th3 = float(theta[0]), float(theta[1]), float(theta[2])
         a12 = th1 + th2
@@ -131,43 +127,57 @@ class FingerEllipseEnv(gym.Env):
 
         if self.cfg.include_xy:
             x, y = self.fingertip_xy(self.theta)
-            parts += [x /self.reach, y /self.reach]
+            parts += [x /self.reichweite, y /self.reichweite]     # Koordinaten normalisieren [-1, 1]
 
         if self.cfg.include_phase:
-            parts += [self.t / float(self.cfg.horizon)]
+            parts += [self.t / float(self.cfg.horizon)] # Zeit normieren [0, 1]
 
         return np.array(parts, dtype=np.float32)
 
 
-    # -----------------------------
     # Ellipse estimation (PCA proxy)
-    # -----------------------------
     def ellipse_area_from_covdet(self, points: np.ndarray) -> Tuple[float, float, float, float]:
         """
-        PCA-based ellipse proxy from covariance.
+        Schätzt eine Ellipse aus Punktwolke über die Kovarianz (PCA-Proxy).
+
+        - Kovarianz Σ beschreibt die Streuung der Punkte in x/y.
+        - Eigenwerte λ1 >= λ2 geben die Varianz entlang Haupt-/Nebenrichtung.
+        - Mit Skalierung k entstehen Halbachsen:
+              a = k * sqrt(λ1),  b = k * sqrt(λ2)
+        - Daraus folgt die Ellipsenfläche:
+              A = πab = π * k^2 * sqrt(det(Σ))
 
         Returns:
             area_det: pi * k^2 * sqrt(det(Sigma))
             a, b:     PCA semi-axes (k*sqrt(eigenvalues))
             detSigma: det(Sigma)
         """
+        # Für <2 Punkte ist Kovarianz nicht sinnvoll definiert -> Rückgabe mit Nullen.
         n = points.shape[0]
         if n < 2:
             return 0.0, 0.0, 0.0, 0.0
-
+        ic(points)
+        # Zentrieren der Punkte (Mittelwert auf den Ursprung verschieben).
         mu = points.mean(axis=0)
         X = points - mu
 
+        # 2x2-Kovarianzmatrix; kleiner Diagonalterm verhindert numerische Probleme.
         Sigma = np.cov(X.T) + 1e-12 * np.eye(2)  # numerical stabilizer
+
+        # Determinante der Kovarianz: in 2D proportional zur Flächenstreuung.
         detSigma = float(np.linalg.det(Sigma))
         detSigma = max(detSigma, 0.0)
 
-        evals, _ = np.linalg.eigh(Sigma)
-        evals = np.sort(evals)[::-1]
-        lam1, lam2 = float(evals[0]), float(evals[1])
+        # Eigenwerte für symmetrische Matrizen.
+        evals, _ = np.linalg.eigh(Sigma)    # aufsteigend sortiert
+        # Größter Eigenwert -> Hauptachse, kleinster -> Nebenachse.
+        lam1, lam2 = float(evals[-1]), float(evals[0])       # lam1: größerer Eigenwert, lam2: kleinerer Eigenwert
 
+        # Halbachsen der skalierten PCA-Ellipse.
         a = self.cfg.k_axis * np.sqrt(max(lam1, 0.0))
         b = self.cfg.k_axis * np.sqrt(max(lam2, 0.0))
+
+        # Äquivalente Flächenformel über det(Σ): π * k^2 * sqrt(det(Σ)).
         area_det = float(np.pi * (self.cfg.k_axis ** 2) * np.sqrt(detSigma))
         return area_det, a, b, detSigma
 
@@ -177,12 +187,12 @@ class FingerEllipseEnv(gym.Env):
 
         area, a, b, detSigma = self.ellipse_area_from_covdet(pts)
 
-        # Closure: enforce pT ~ p0
+        # Closure: zwingt pT ~ p0
         close_dist2 = float(np.sum((pts[-1] - pts[0]) ** 2))
         p_close = self.cfg.w_close * close_dist2
 
-        # Degeneracy: enforce b/a >= tau
-        axis_ratio = (b / a) if a > 1e-12 else 0.0
+        # Degeneracy: zwingt b/a >= tau
+        axis_ratio = (b / a) if a > 1e-12 else 0.0      # große Halbachse muss ein wert haben
         hinge = max(0.0, self.cfg.min_axis_ratio - axis_ratio)
         p_degen = self.cfg.w_degen * (hinge ** 2)
 
@@ -203,16 +213,10 @@ class FingerEllipseEnv(gym.Env):
         return float(penalty), info
 
 
-    # -----------------------------
     # Gym API
-    # -----------------------------
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
-        super().reset(seed=seed)
+        super().reset(seed=seed)        #  Gymnasiums Seeding
 
-        # reseed env RNG if a seed is provided
-        # if seed is not None:
-        #     self.np_random, _ = gym.utils.seeding.np_random(seed)
-        # ic(seed)
         self.t = 0
         self.action_energy_sum = 0.0
         self.prev_area = 0.0
@@ -220,8 +224,7 @@ class FingerEllipseEnv(gym.Env):
         self.theta = self.np_random.uniform(self.cfg.theta_min, self.cfg.theta_max, size=(3,)).astype(np.float64)
 
         p0 = self.fingertip_xy(self.theta)
-        self.traj[0] = p0
-        self.traj[1:] = p0  # handy for rendering (shows line from start)
+        self.traj[:] = p0  # alle Punkte der Trajektorie inklusive Start Punkt auf P0 setzen
 
         obs = self._obs()
         info = {"fingertip_xy": p0.copy()}
@@ -250,7 +253,7 @@ class FingerEllipseEnv(gym.Env):
         a2 = float(np.sum(action * action))
         self.action_energy_sum += a2
 
-        # Dense area increment
+        # Dense Fläche inkremental
         pts_now = self.traj[: self.t + 2]  # p0..p_{t+1}
         area_now, a, b, detSigma = self.ellipse_area_from_covdet(pts_now)
 
@@ -259,7 +262,7 @@ class FingerEllipseEnv(gym.Env):
 
         reward = float(d_area - self.cfg.w_action * a2)
 
-        # advance time
+        # nächster Schritt
         self.t += 1
         truncated = (self.t >= self.cfg.horizon)    # Truncated is for time-limits when time is not part of the observation space. 
         terminated = False                          # Bei Training: terminated => V(st+1) = 0 / truncated => V(st+1)!= 0
@@ -275,13 +278,13 @@ class FingerEllipseEnv(gym.Env):
             "reward_dense": float(reward),
         }
 
-        # Abschlussbewertung am Episodenende (egal ob truncated oder terminated)
+        # Abschlussbewertung am Episodenende
         if truncated or terminated: 
             penalty, term_info = self.terminal_penalty()
             reward -= float(penalty)
-            info.update(term_info)
-            info["reward_terminal"] = float(-penalty)  # convenience
-
+            info.update(term_info)      # fügt key-value paare aus 'term_info' in 'info' hinzu, alte keys werden überschreiben!
+            info["reward_terminal"] = float(-penalty)  # neues key-value paar
+        # ic(info)
         obs = self._obs()
 
         if self.render_mode == "human":
@@ -291,7 +294,6 @@ class FingerEllipseEnv(gym.Env):
 
 
     def render(self):
-        # optional import: keeps env lightweight when not rendering
         import matplotlib.pyplot as plt
 
         n = max(1, min(self.t + 1, self.cfg.horizon + 1))
@@ -308,22 +310,21 @@ class FingerEllipseEnv(gym.Env):
         plt.clf()
         plt.plot(pts[:, 0], pts[:, 1])
         plt.plot([p0[0], p1[0], p2[0], p3[0]], [p0[1], p1[1], p2[1], p3[1]], marker="o")
-        plt.plot(p3[0], p3[1], marker="o")
+        plt.plot(p3[0], p3[1], "g", marker="o")
 
         r = self.cfg.l1 + self.cfg.l2 + self.cfg.l3
         plt.xlim(-r, r)
         plt.ylim(-r, r)
         plt.gca().set_aspect("equal", adjustable="box")
         plt.title(f"FingerEllipseEnv t={self.t}/{self.cfg.horizon} | adv={self.cfg.adv_noise_scale}")
+        plt.grid()
         plt.pause(0.001)
 
 
-# -----------------------------
 # TEST
-# -----------------------------
 def run_episode(seed):
     cfg = EnvConfig(horizon=128, adv_noise_scale=0.0)   #128 Environment-Horizon(Env. Ebene = maximale Episodenlänge) = 128. Rollout-Horizon (Parameter-Update) ist Training-Ebene
-    env = FingerEllipseEnv(cfg=cfg, render_mode=None)   # 'human'
+    env = FingerEllipseEnv(cfg=cfg, render_mode='human')   # 'human'
 
     # WICHTIG: beide RNGs seeden
     env.action_space.seed(seed)
@@ -347,16 +348,16 @@ def main():
 
     for i in range(3):
         ep_return, traj, info = run_episode(seed=None)
-        ic(f"{i+1}. episode_return: {ep_return}, Ellipse_area: {info['area_det_final']}")
-        ic('=' * 30)
-        ic("return:", ep_return)
-        # ic("area:", info["area_det_final"])
-        # ic("closure_dist2:", info["closure_dist2"])
-        # ic("penalty_close:", info["penalty_close"])
-        # ic("penalty_degen:", info["penalty_degen"])
-        # ic("axis_ratio:", info["axis_ratio_b_over_a_final"])
-        # ic("terminal_penalty:", info["terminal_penalty"])
-        ic('=' * 30)
+        print("\n")
+        print(f"{i+1}. episode_return: {ep_return}, Ellipse_area: {info['area_det_final']}")
+        print('=' * 30)
+        print("return:", ep_return)
+        print("area:", info["area_det_final"])
+        print("closure_dist2:", info["closure_dist2"])
+        print("penalty_close:", info["penalty_close"])
+        print("penalty_degen:", info["penalty_degen"])
+        print("axis_ratio:", info["axis_ratio_b_over_a_final"])
+        print("terminal_penalty:", info["terminal_penalty"])
 
 if __name__ == "__main__":
     main()

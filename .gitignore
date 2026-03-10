@@ -1,9 +1,10 @@
 .vscode/
-Actor_Critic/.vscode/
-Vorschlag_Aufgabenverteilung.png
+Actor_Critic/
 Final_Examination.pdf
 test.py
+np_test.py
 scripts/tests/
 scripts/res/
 scripts/finger_env copy.py
 __pycache__
+*.png

@@ -1,3 +1,4 @@
+# Source: https://github.com/vwxyzjn/cleanrl/blob/master/cleanrl/sac_continuous_action.py
 import torch
 import torch.nn as nn
 from torch.distributions import Normal
@@ -31,7 +32,7 @@ class Actor(nn.Module):
         return Normal(mu, std)
 
 
-    def sample_action(self, state):
+    def choose_action(self, state):
         mu, std = self.forward(state)
         dist = torch.distributions.Normal(mu, std)
         # raw action aus Gaussian
@@ -48,11 +49,11 @@ class Actor(nn.Module):
         return squashed_action, log_prob, entropy
 
 
-    def evaluate_actions(self, obs: torch.Tensor, actions: torch.Tensor):
-        dist = self.get_dist(obs)
-        log_prob = dist.log_prob(actions).sum(dim=-1)
-        entropy = dist.entropy().sum(dim=-1)
-        return log_prob, entropy
+    # def evaluate_actions(self, obs: torch.Tensor, actions: torch.Tensor):
+    #     dist = self.get_dist(obs)
+    #     log_prob = dist.log_prob(actions).sum(dim=-1)
+    #     entropy = dist.entropy().sum(dim=-1)
+    #     return log_prob, entropy
 
 
 

@@ -96,7 +96,7 @@ def compute_ellipse_reward(trajectory):
 # -------------------------------
 # 6️⃣ Trainingsloop (Skizze)
 # -------------------------------
-for episode in range(1000):
+for episode in range(10):
     theta = np.array([0.0, 0.0, 0.0])  # Startwinkel
     trajectory = []
 
@@ -106,7 +106,7 @@ for episode in range(1000):
     # feste Policy-Std (einfacher Sketch)
     policy_std = 0.2
 
-    for t in range(500):  # Schritte pro Episode
+    for t in range(5000):  # Schritte pro Episode
         state = torch.as_tensor(theta, dtype=torch.float32, device=device)
 
         # Critic baseline V(s)
