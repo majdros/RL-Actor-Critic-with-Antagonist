@@ -5,9 +5,11 @@ import torch
 from finger_env import FingerEllipseEnv, EnvConfig
 from actor_critic import Actor, Critic
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = EnvConfig().device
 
-MODE = "render"   # "render" oder "eval"
+MODE = "eval"   # "render" oder "eval"
+EVALUATE_EPISODES_NUM = 20
+SEED = 5
 
 def load_model(checkpoint_path):
 
@@ -75,8 +77,7 @@ def run_episode(actor, env):
 
     return metrics
 
-
-def evaluate(actor, cfg, adv_noise_scale, num_episodes=20):
+def evaluate(actor, cfg, adv_noise_scale, num_episodes=EVALUATE_EPISODES_NUM):
 
     eval_cfg = EnvConfig(**cfg.__dict__)
     eval_cfg.adv_noise_scale = adv_noise_scale
@@ -105,18 +106,17 @@ def evaluate(actor, cfg, adv_noise_scale, num_episodes=20):
 
 
 @torch.no_grad()
-def render_trained_episode(checkpoint_path, adv_noise_scale=1.0, seed=0):
+def render_trained_episode(checkpoint_path, adv_noise_scale, seed= SEED):
     """
     Lädt ein trainiertes Modell und spielt genau eine Episode
-    sichtbar mit render_mode='human' ab.
+    sichtbar mit render_mode='human'.
     """
     print(f"Model: {checkpoint_path}")
 
     actor, cfg = load_model(checkpoint_path)
     eval_cfg = EnvConfig(**cfg.__dict__)        # config werden aus checkpoints geladen!
     eval_cfg.adv_noise_scale = adv_noise_scale
-    eval_cfg.horizon = 128
-
+    # eval_cfg.horizon = 128
     env = FingerEllipseEnv(cfg=eval_cfg, render_mode="human")
 
     obs, _ = env.reset(seed=seed)
@@ -144,32 +144,45 @@ def render_trained_episode(checkpoint_path, adv_noise_scale=1.0, seed=0):
 def main():
     if MODE == "render":
         render_trained_episode(
-            # checkpoi
-            checkpoint_path="checkpoints/100-episoden/best_by_area.pt",
-            # checkpoint_path="checkpoints/100-episoden/best_by_return.pt",
-            # checkpoint_path="checkpoints/100-episoden/last_model.pt",
+            # checkpoints
+            checkpoint_path="checkpoints/20444-episoden/best_by_eval_area.pt",
+            # checkpoint_path="checkpoints/20050-episoden/best_by_eval_area.pt",
+            # checkpoint_path="checkpoints/20000-episoden/last_model.pt",
+            # checkpoint_path="checkpoints/continue-training/10000-episoden/best_by_eval_return.pt",
             adv_noise_scale=0.0,
-            seed=0,
+            seed=SEED,
         )
 
 
     else:
         checkpoints = [
-            "checkpoints/best_by_return.pt",
-            "checkpoints/best_by_area.pt"
+
+            # "checkpoints/10001-episoden/best_by_area.pt",
+            # "checkpoints/10000-episoden/best_by_return.pt",
+            # "checkpoints/10001-episoden/best_by_area.pt",
+            # "checkpoints/10001-episoden/best_by_return.pt",
+            # "checkpoints/20000-episoden/best_by_eval_area.pt",
+            # "checkpoints/20000-episoden/best_by_eval_return.pt",
+            "checkpoints/20444-episoden/best_by_eval_area.pt",
+            "checkpoints/20444-episoden/best_by_eval_return.pt",
+            # "checkpoints/continue-training/10000-episoden/best_by_eval_return.pt",
+            # "checkpoints/continue-training/10000-episoden/best_by_eval_area.pt",
+            # "checkpoints/10002-episoden/best_by_return.pt",
+            # "checkpoints/continue-training-w_close-0.5/best_by_area.pt",
+            # "checkpoints/continue-training-w_close-0.5/best_by_return.pt",
         ]
 
-        noise_levels = [0.0, 0.05, 0.1, 0.2]
+        adv_noise_scale = [0.0, 0.25, 0.5, 0.75]
 
         for ckpt in checkpoints:
 
-            print("=" * 20)
+            print("=" * 20 + "\n")
             print("MODEL:", ckpt)
             print("=" * 20)
 
             actor, cfg = load_model(ckpt)
 
-            for noise in noise_levels:
+            for noise in adv_noise_scale:
 
                 summary = evaluate(actor, cfg, noise)
 
@@ -178,7 +191,8 @@ def main():
                     f"return={summary['return']:.3f} | "
                     f"area={summary['area']:.3f} | "
                     f"closure={summary['closure']:.5f} | "
-                    f"axis_ratio={summary['axis_ratio']:.3f}"
+                    f"axis_ratio={summary['axis_ratio']:.3f} | "
+                    # f"r_close_dense={summary['r_close_dense']:.3f}"
                 )
 
 

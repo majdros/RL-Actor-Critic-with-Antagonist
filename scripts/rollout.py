@@ -10,8 +10,9 @@ alle Größen, die später für das Policy-Update benötigt werden.
 
 import torch
 import numpy as np
+from finger_env import EnvConfig
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = EnvConfig().device
 
 def collect_rollout(env, actor, critic, horizon, device=device):
     """
@@ -56,7 +57,7 @@ def collect_rollout(env, actor, critic, horizon, device=device):
         # Actor: Aktion sampeln π(a|s)
         action_tensor, log_prob, entropy = actor.choose_action(obs_tensor)
 
-        # Critic: Zustand bewerten V(s)
+        # Critic: Zustand bewerten V(s) schätzen
         value = critic(obs_tensor)
 
         # Aktion im Environment ausführen
@@ -84,7 +85,7 @@ def collect_rollout(env, actor, critic, horizon, device=device):
         if done:
             break
 
-    # Listen in Ternsoren umwandeln
+    # Listen in Tensoren umwandeln
     rollout = dict(
         obs=torch.tensor(np.array(obs_list), dtype=torch.float32, device=device),
         actions=torch.tensor(np.array(action_list), dtype=torch.float32, device=device),
@@ -95,6 +96,5 @@ def collect_rollout(env, actor, critic, horizon, device=device):
         dones=torch.tensor(done_list, dtype=torch.float32, device=device),
         last_info = last_info
     )
-    from icecream import ic
-    # ic(rollout['last_info'])
+
     return rollout

@@ -1,5 +1,6 @@
 .vscode/
 Actor_Critic/
+checkpoints/
 Final_Examination.pdf
 test.py
 np_test.py

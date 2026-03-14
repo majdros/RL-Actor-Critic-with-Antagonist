@@ -8,12 +8,33 @@ import torch.optim as optim
 from finger_env import FingerEllipseEnv, EnvConfig
 from actor_critic import Actor, Critic
 from rollout import collect_rollout
+from evaluate import evaluate
 
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = EnvConfig().device
+EPISODEN = 20444
 
-EPISODEN = 100
-SAVE_DIR = os.path.join("checkpoints", f"{EPISODEN}-episoden")
+MODE = "NEU"            # Neu: Training ein frisches Policy, RESUME: besthendes Policy weiter trainineren 
+
+## Training von vorne ##
+if MODE == "NEU":
+    RESUME_PATH = None 
+    SAVE_DIR = os.path.join("checkpoints", f"{EPISODEN}-episoden")
+
+## Resume Training ##
+elif MODE == "RESUME":
+    RESUME_PATH = os.path.join("checkpoints", "20000-episoden", "best_by_eval_return.pt")     # Bestehendes Policy-path eingeben
+    SAVE_DIR = os.path.join("checkpoints","continue-training",f"{EPISODEN}-episoden")
+
+if MODE not in {"NEU", "RESUME"}:
+    raise ValueError("Training-Mode 'MODE' entweder 'NEU' oder 'RESUME' eingeben!")
+
+GAMMA = 0.99
+ACTOR_LR = 0.0003
+CRITIC_LR = 0.0001
+ENTROPY_COEF = 0.001
+VALUE_COEF = 0.5
+
 
 # Monte-Carlo Returns berechnen
 def compute_returns(rewards: torch.Tensor, gamma: float) -> torch.Tensor:
@@ -36,7 +57,7 @@ def compute_returns(rewards: torch.Tensor, gamma: float) -> torch.Tensor:
 
 
 # Ein einzelner Trainingsschritt
-def train_one_episode(env, actor, critic, optimizer, horizon, gamma, entropy_coef, value_coef):
+def train_one_episode(env, actor, critic, actor_optimizer, critic_optimizer, horizon, gamma, entropy_coef, value_coef):
     """
     Führt einen Rollout aus und macht anschließend ein Update
     für Actor und Critic.
@@ -54,6 +75,7 @@ def train_one_episode(env, actor, critic, optimizer, horizon, gamma, entropy_coe
         device=device,
     )
 
+    obs_batch = rollout["obs"]
     rewards = rollout["rewards"]         
     log_probs = rollout["log_probs"]     
     values = rollout["values"]           
@@ -69,30 +91,32 @@ def train_one_episode(env, actor, critic, optimizer, horizon, gamma, entropy_coe
     # Advantage-Normalisierung
     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-    # Actor-Loss:
+    # Actor update:
+    actor_optimizer.zero_grad()
     # Wenn Advantage positiv ist, soll log_prob größer werden.
     # Wenn Advantage negativ ist, soll log_prob kleiner werden.
     actor_loss = -(log_probs * advantages.detach()).mean()
-
-    # Critic-Loss: Critic soll Returns möglichst gut approximieren
-    critic_loss = F.mse_loss(values, returns.detach())
-
     # Entropy-Bonus: Fördert Exploration, verhindert frühes Kollabieren der Policy
     entropy_bonus = entropies.mean()
-
-    total_loss = actor_loss + value_coef * critic_loss - entropy_coef * entropy_bonus
-
+    actor_total_loss = actor_loss - entropy_coef * entropy_bonus
     # Backpropagatoion
-    optimizer.zero_grad()
-    total_loss.backward()
-
+    actor_total_loss.backward()
     # Gradienten clipping für stabileres Training
-    torch.nn.utils.clip_grad_norm_(
-        list(actor.parameters()) + list(critic.parameters()),
-        max_norm=0.5
-    )
+    torch.nn.utils.clip_grad_norm_(actor.parameters(), max_norm=0.5)
+    actor_optimizer.step()
 
-    optimizer.step()
+
+    # Critic update: Critic soll Returns möglichst gut approximieren
+    critic_optimizer.zero_grad()
+    values_pred = critic(obs_batch)
+    critic_loss = F.mse_loss(values_pred, returns.detach())
+    critic_total_loss = value_coef * critic_loss
+    # Backpropagatoion
+    critic_total_loss.backward()
+    # Gradienten clipping für stabileres Training
+    torch.nn.utils.clip_grad_norm_(critic.parameters(), max_norm=0.5)
+    critic_optimizer.step()
+
 
     # Logging / Diagnose
     metrics = {
@@ -124,23 +148,34 @@ def save_checkpoint(path, actor, critic, cfg, episode, metrics):
     )
 
 
+def save_training_log(path, return_log, area_log, actor_loss_log, critic_loss_log, entropy_log):
+    torch.save(
+        {
+            "return": list(return_log),
+            "area": list(area_log),
+            "actor_loss": list(actor_loss_log),
+            "critic_loss": list(critic_loss_log),
+            "entropy": list(entropy_log),
+
+        },
+        path,
+    )
+
+
 # Hauptfunktion
 def main():
     # Hyperparameter
-    cfg = EnvConfig(
-        horizon=128,
-        adv_noise_scale=0.0,
-        w_action=0.1,
-    )
+    cfg = EnvConfig()
 
     num_episodes = EPISODEN
-    gamma = 0.99
-    lr = 3e-4
+    gamma = GAMMA
     hidden_dim = 128
-    entropy_coef = 1e-3
-    value_coef = 0.5
+    entropy_coef = ENTROPY_COEF
+    value_coef = VALUE_COEF
 
-    os.makedirs(SAVE_DIR, exist_ok=True)
+    eval_every = 200          # alle 200 Trainings-Episoden evaluieren
+    eval_episodes = 20        # Evaluation über 20 Episoden
+    eval_noise = 0.0          
 
     # Environment
     env = FingerEllipseEnv(cfg=cfg, render_mode=None)
@@ -152,61 +187,112 @@ def main():
     actor = Actor(obs_dim=obs_dim, act_dim=act_dim, hidden_dim=hidden_dim).to(device)
     critic = Critic(obs_dim=obs_dim, hidden_dim=hidden_dim).to(device)
 
-    optimizer = optim.Adam(
-        list(actor.parameters()) + list(critic.parameters()),
-        lr=lr
-    )
+    actor_optimizer = optim.Adam(actor.parameters(), lr=ACTOR_LR)
+    critic_optimizer = optim.Adam(critic.parameters(), lr=CRITIC_LR)
+
+    # -------- Resume: nur Gewichte laden --------
+    start_episode = 0
+    if RESUME_PATH is not None:
+        checkpoint = torch.load(RESUME_PATH, map_location=device)
+        actor.load_state_dict(checkpoint["actor_state_dict"])
+        critic.load_state_dict(checkpoint["critic_state_dict"])
+        start_episode = int(checkpoint.get("episode", 0))
+        print(f"Resume von: {RESUME_PATH}")
+        print(f"Weiter ab Episode {start_episode + 1}")
+
+    os.makedirs(SAVE_DIR, exist_ok=True)
 
     print("Training startet ...")
     print(f"obs_dim={obs_dim}, act_dim={act_dim}, device={device}")
     print(f"Config: {asdict(cfg)}")
 
-    best_return = float("-inf")
-    best_area = float("-inf")
+    best_eval_return = float("-inf")
+    best_eval_area = float("-inf")
+
+
+    return_log = []
+    area_log = []
+    actor_loss_log = []
+    critic_loss_log = []
+    entropy_log = []
+
+
 
     # Trainingsloop
-    for episode in range(1, num_episodes + 1):
-
+    # for episode in range(1, num_episodes + 1):
+    for episode in range(start_episode + 1, start_episode + num_episodes + 1):
         metrics = train_one_episode(
             env=env,
             actor=actor,
             critic=critic,
-            optimizer=optimizer,
+            actor_optimizer=actor_optimizer,
+            critic_optimizer=critic_optimizer,
             horizon=cfg.horizon,
             gamma=gamma,
             entropy_coef=entropy_coef,
             value_coef=value_coef,
         )
+        # Metriken speichern
+        return_log.append(metrics["episode_return"])
+        area_log.append(metrics["area_det_final"])
+        actor_loss_log.append(metrics["actor_loss"])
+        critic_loss_log.append(metrics["critic_loss"])
+        entropy_log.append(metrics["entropy"])
 
-        ep_return = metrics["episode_return"]
-        ep_area = metrics["area_det_final"]
+        # Periodische Evaluation
+        if episode % eval_every == 0 or episode == start_episode + num_episodes:
+            actor.eval()
+            # critic.eval()
 
-        # Bestes Modell speichern
-        if ep_return > best_return:
-            best_return = ep_return
-            save_checkpoint(
-                path=os.path.join(SAVE_DIR, "best_by_return.pt"),
+            eval_summary = evaluate(
                 actor=actor,
-                critic=critic,
                 cfg=cfg,
-                episode=episode,
-                metrics=metrics,
+                adv_noise_scale=eval_noise,
+                num_episodes=eval_episodes,
             )
 
-        # Bestes Modell nach finaler Ellipsenfläche
-        if ep_area > best_area:
-            best_area = ep_area
-            save_checkpoint(
-                path=os.path.join(SAVE_DIR, "best_by_area.pt"),
-                actor=actor,
-                critic=critic,
-                cfg=cfg,
-                episode=episode,
-                metrics=metrics,
+            mean_eval_return = float(eval_summary["return"])
+            mean_eval_area = float(eval_summary["area"])
+
+            print(
+                f"[Eval @ Episode {episode:4d}] "
+                f"mean_return={mean_eval_return:.4f} | "
+                f"mean_area={mean_eval_area:.4f}"
             )
+
+            if mean_eval_return > best_eval_return:
+                best_eval_return = mean_eval_return
+                save_checkpoint(
+                    path=os.path.join(SAVE_DIR, "best_by_eval_return.pt"),
+                    actor=actor,
+                    critic=critic,
+                    cfg=cfg,
+                    episode=episode,
+                    metrics={
+                        "mean_eval_return": mean_eval_return,
+                        "mean_eval_area": mean_eval_area,
+                    },
+                )
+
+            if mean_eval_area > best_eval_area:
+                best_eval_area = mean_eval_area
+                save_checkpoint(
+                    path=os.path.join(SAVE_DIR, "best_by_eval_area.pt"),
+                    actor=actor,
+                    critic=critic,
+                    cfg=cfg,
+                    episode=episode,
+                    metrics={
+                        "mean_eval_return": mean_eval_return,
+                        "mean_eval_area": mean_eval_area,
+                    },
+                )
+
+            actor.train()
+            # critic.train()
 
         # Regelmäßiges Logging
-        if episode % 50 == 0 or episode == 1:
+        if episode % eval_every == 0 or episode == 1:
             print(
                 f"[Episode {episode:4d}] "
                 f"Return={metrics['episode_return']:.4f} | "
@@ -218,19 +304,136 @@ def main():
             )
 
     # Letztes Modell speichern
+    last_episode = start_episode + num_episodes
     save_checkpoint(
         path=os.path.join(SAVE_DIR, "last_model.pt"),
         actor=actor,
         critic=critic,
         cfg=cfg,
-        episode=num_episodes,
+        episode=last_episode,
         metrics=metrics,
+    )
+    save_training_log(
+        path=os.path.join(SAVE_DIR, "training_log.pt"),
+        return_log=return_log,
+        area_log=area_log,
+        actor_loss_log=actor_loss_log,
+        critic_loss_log=critic_loss_log,
+        entropy_log=entropy_log
     )
 
     print("Training abgeschlossen.")
-    print(f"Best episode return: {best_return:.4f}")
-    print(f"Best area:   {best_area:.4f}")
+    print(f"Best mean eval return: {best_eval_return:.4f}")
+    print(f"Best mean eval area:   {best_eval_area:.4f}")
 
+# Visuallisierung
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    # x-Achse = Episodennummern
+    episodes = np.arange(1, len(return_log) + 1)
+
+    # einfache Glättung
+    def moving_average(x, window=100):
+        if len(x) < window:
+            return np.array(x)
+        return np.convolve(x, np.ones(window) / window, mode="valid")
+
+
+    # Plot 1: Return 
+    plt.figure(figsize=(12, 6))
+    plt.plot(episodes, return_log, alpha=0.4, label="Episode return")
+
+    ret_smooth = moving_average(return_log, window=100)
+    ret_label = (
+        f"Moving average (100) "
+        f"[min={ret_smooth.min():.4f}, max={ret_smooth.max():.4f}, mean={ret_smooth.mean():.4f}]"
+    )
+    if len(return_log) >= 100:
+        plt.plot(np.arange(100, len(return_log) + 1), ret_smooth, label=ret_label)
+    else:
+        plt.plot(episodes, ret_smooth, label=ret_label)
+
+    plt.xlabel("Episode")
+    plt.ylabel("Return")
+    plt.title(f"Training Curve: Episode Return, adv_noise_scale:{cfg.adv_noise_scale}, Episoden:{EPISODEN}")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(SAVE_DIR, "training_curve_return.png"), dpi=200, bbox_inches="tight")
+    plt.show()
+
+
+    # Plot 2: Area 
+    plt.figure(figsize=(12, 6))
+    plt.plot(episodes, area_log, alpha=0.4, label="Final ellipse area")
+
+    area_smooth = moving_average(area_log, window=100)
+    area_label = (
+        f"Moving average (100) "
+        f"[min={area_smooth.min():.4f}, max={area_smooth.max():.4f}, mean={area_smooth.mean():.4f}]"
+    )
+    if len(area_log) >= 100:
+        plt.plot(np.arange(100, len(area_log) + 1), area_smooth, label=area_label)
+    else:
+        plt.plot(episodes, area_smooth, label=area_label)
+
+    plt.xlabel("Episode")
+    plt.ylabel("Area")
+    plt.title(f"Training Curve: Final Ellipse Area, adv_noise_scale={cfg.adv_noise_scale}, Episoden:{EPISODEN}")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(SAVE_DIR, "training_curve_area.png"), dpi=200, bbox_inches="tight")
+    plt.show()
+
+
+    # plot 3: Acotr & Critic Loss
+    plt.figure(figsize=(12, 6))
+    plt.plot(episodes, actor_loss_log, alpha= 0.4, label="Acotr loss")
+    plt.plot(episodes, critic_loss_log, alpha= 0.4, label="Critic loss")
+
+    actor_loss_smooth = moving_average(actor_loss_log, window=100)
+    critic_loss_smooth = moving_average(critic_loss_log, window=100)
+
+    if len(actor_loss_log) >= 100:
+        episodes_smooth = np.arange(100, len(actor_loss_log) + 1)
+    else:
+        episodes_smooth = episodes
+
+    plt.plot(episodes_smooth, actor_loss_smooth, label="Actor loss MA(100)")
+    plt.plot(episodes_smooth, critic_loss_smooth, label="Critic loss MA(100)")
+
+    plt.xlabel("Episode")
+    plt.ylabel("Value")
+    plt.title(f"Training Curve: Actor & Critic Loss, adv_noise_scale={cfg.adv_noise_scale}, Episoden:{EPISODEN}")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(SAVE_DIR, "training_curve_losses.png"), dpi=200, bbox_inches="tight")
+    plt.show()
+
+
+    # Plot 4: Entropy
+    plt.figure(figsize=(12, 6))
+    plt.plot(episodes, entropy_log, alpha=0.35, label="Entropy")
+
+    entropy_smooth = moving_average(entropy_log, window=100)
+    if len(entropy_log) >= 100:
+        episodes_smooth = np.arange(100, len(entropy_log) + 1)
+    else:
+        episodes_smooth = episodes
+
+    plt.plot(episodes_smooth, entropy_smooth, label="Entropy MA(100)")
+
+    plt.xlabel("Episode")
+    plt.ylabel("Entropy")
+    plt.title(f"Training Curve: Policy Entropy, adv_noise_scale={cfg.adv_noise_scale}, Episoden:{EPISODEN}")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(SAVE_DIR, "training_curve_entropy.png"), dpi=200, bbox_inches="tight")
+    plt.show()    
 
 if __name__ == "__main__":
     main()

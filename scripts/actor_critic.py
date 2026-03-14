@@ -41,19 +41,12 @@ class Actor(nn.Module):
         squashed_action = torch.tanh(raw_action)
         # log_prob berechnen
         log_prob = dist.log_prob(raw_action)
-        # correction term (tanh transformation)
+        # Korrektur term (tanh Transformation)
         log_prob -= torch.log(1 - squashed_action.pow(2) + 1e-6)
         log_prob = log_prob.sum()
         entropy = dist.entropy().sum()
 
         return squashed_action, log_prob, entropy
-
-
-    # def evaluate_actions(self, obs: torch.Tensor, actions: torch.Tensor):
-    #     dist = self.get_dist(obs)
-    #     log_prob = dist.log_prob(actions).sum(dim=-1)
-    #     entropy = dist.entropy().sum(dim=-1)
-    #     return log_prob, entropy
 
 
 
