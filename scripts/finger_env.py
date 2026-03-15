@@ -40,7 +40,7 @@ class EnvConfig:
     min_axis_ratio: float = 0.35  # tau
 
     # antagonist Stärke in Rad [0.0, 0.2, 0.5, 0.75]
-    adv_noise_scale: float = 0.0  # relative zu max_delta => 0.05 * 0.02 = 0.001 rad ~ 0.057°
+    adv_noise_scale: float = 0.25  # relative zu max_delta => 0.05 * 0.02 = 0.001 rad ~ 0.057°
     # relative zu max_delta => 0.25 * 0.05 = 0.0125 rad ~ 0.72°
 
 

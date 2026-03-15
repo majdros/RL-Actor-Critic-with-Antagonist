@@ -8,7 +8,7 @@ from actor_critic import Actor, Critic
 device = EnvConfig().device
 
 MODE = "eval"   # "render" oder "eval"
-EVALUATE_EPISODES_NUM = 20
+EVALUATE_EPISODES_NUM = 50
 SEED = 5
 
 def load_model(checkpoint_path):
@@ -114,7 +114,7 @@ def render_trained_episode(checkpoint_path, adv_noise_scale, seed= SEED):
     print(f"Model: {checkpoint_path}")
 
     actor, cfg = load_model(checkpoint_path)
-    eval_cfg = EnvConfig(**cfg.__dict__)        # config werden aus checkpoints geladen!
+    eval_cfg = EnvConfig(**cfg.__dict__)        # configs werden aus checkpoints geladen!
     eval_cfg.adv_noise_scale = adv_noise_scale
     # eval_cfg.horizon = 128
     env = FingerEllipseEnv(cfg=eval_cfg, render_mode="human")
@@ -144,35 +144,38 @@ def render_trained_episode(checkpoint_path, adv_noise_scale, seed= SEED):
 def main():
     if MODE == "render":
         render_trained_episode(
-            # checkpoints
-            checkpoint_path="checkpoints/20444-episoden/best_by_eval_area.pt",
-            # checkpoint_path="checkpoints/20050-episoden/best_by_eval_area.pt",
-            # checkpoint_path="checkpoints/20000-episoden/last_model.pt",
-            # checkpoint_path="checkpoints/continue-training/10000-episoden/best_by_eval_return.pt",
-            adv_noise_scale=0.0,
+            checkpoint_path="checkpoints/20446-episoden/best_by_eval_return.pt",
+            # checkpoint_path="checkpoints/continue-training/3000-episoden&0.25-noise-scale/best_by_eval_area.pt",
+            # checkpoint_path="checkpoints/100000-episoden-parallel/best_by_eval_return.pt",
+            
+            adv_noise_scale=1.0,
             seed=SEED,
         )
 
 
     else:
         checkpoints = [
-
-            # "checkpoints/10001-episoden/best_by_area.pt",
-            # "checkpoints/10000-episoden/best_by_return.pt",
-            # "checkpoints/10001-episoden/best_by_area.pt",
-            # "checkpoints/10001-episoden/best_by_return.pt",
             # "checkpoints/20000-episoden/best_by_eval_area.pt",
             # "checkpoints/20000-episoden/best_by_eval_return.pt",
-            "checkpoints/20444-episoden/best_by_eval_area.pt",
-            "checkpoints/20444-episoden/best_by_eval_return.pt",
+            #########################
+            # "checkpoints/20445-episoden/best_by_eval_area.pt",
+            # "checkpoints/20445-episoden/best_by_eval_return.pt",
+            # "checkpoints/20446-episoden/best_by_eval_area.pt",
+            "checkpoints/20446-episoden/best_by_eval_return.pt",
+            # "checkpoints/continue-training/3000-episoden&0.25-noise-scale/best_by_eval_area.pt",
+            # "checkpoints/continue-training/3000-episoden&0.25-noise-scale/best_by_eval_return.pt",
+            #########################
+            # "checkpoints/20500-episoden-parallel/best_by_eval_area.pt",
+            # "checkpoints/20500-episoden-parallel/best_by_eval_return.pt",
+            # "checkpoints/100000-episoden-parallel/best_by_eval_return.pt",
+            # "checkpoints/100000-episoden-parallel/best_by_eval_return.pt",
             # "checkpoints/continue-training/10000-episoden/best_by_eval_return.pt",
             # "checkpoints/continue-training/10000-episoden/best_by_eval_area.pt",
             # "checkpoints/10002-episoden/best_by_return.pt",
-            # "checkpoints/continue-training-w_close-0.5/best_by_area.pt",
-            # "checkpoints/continue-training-w_close-0.5/best_by_return.pt",
         ]
 
-        adv_noise_scale = [0.0, 0.25, 0.5, 0.75]
+        # adv_noise_scale = [0.0, 0.25, 0.5, 0.75]
+        adv_noise_scale = [0.0, 0.1, 0.25, 0.5, 0.75]
 
         for ckpt in checkpoints:
 
@@ -192,7 +195,6 @@ def main():
                     f"area={summary['area']:.3f} | "
                     f"closure={summary['closure']:.5f} | "
                     f"axis_ratio={summary['axis_ratio']:.3f} | "
-                    # f"r_close_dense={summary['r_close_dense']:.3f}"
                 )
 
 

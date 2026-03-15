@@ -1,6 +1,9 @@
 .vscode/
 Actor_Critic/
 checkpoints/
+figures/
+scripts/rollout_parallel.py
+scripts/train_parallel.py
 Final_Examination.pdf
 test.py
 np_test.py

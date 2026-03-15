@@ -15,7 +15,7 @@ class Actor(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.Tanh()
         )
-        self.mu_head = nn.Linear(hidden_dim, act_dim)
+        self.mu_head = nn.Linear(hidden_dim, act_dim)       # Δθ1, Δθ2, Δθ3
         # globale log_std-Parameter
         self.log_std = nn.Parameter(torch.zeros(act_dim))
 
@@ -60,7 +60,7 @@ class Critic(nn.Module):
             nn.Tanh(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.Tanh(),
-            nn.Linear(hidden_dim, 1),
+            nn.Linear(hidden_dim, 1),       # Value V(s)
         )
 
     def forward(self, obs: torch.Tensor):

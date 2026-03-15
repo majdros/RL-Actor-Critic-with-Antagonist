@@ -12,9 +12,9 @@ from evaluate import evaluate
 
 
 device = EnvConfig().device
-EPISODEN = 20444
+EPISODEN = 3000            # Anzahl von Training-Episoden
 
-MODE = "NEU"            # Neu: Training ein frisches Policy, RESUME: besthendes Policy weiter trainineren 
+MODE = "RESUME"            # Neu: Training ein frische Policy, RESUME: besthende Policy weiter trainineren 
 
 ## Training von vorne ##
 if MODE == "NEU":
@@ -23,16 +23,17 @@ if MODE == "NEU":
 
 ## Resume Training ##
 elif MODE == "RESUME":
-    RESUME_PATH = os.path.join("checkpoints", "20000-episoden", "best_by_eval_return.pt")     # Bestehendes Policy-path eingeben
-    SAVE_DIR = os.path.join("checkpoints","continue-training",f"{EPISODEN}-episoden")
+    RESUME_PATH = os.path.join("checkpoints", "20446-episoden", "best_by_eval_return.pt")     # Bestehendes Policy-path eingeben
+    SAVE_DIR = os.path.join("checkpoints","continue-training",f"{EPISODEN}-episoden&{EnvConfig().adv_noise_scale}-noise-scale")
 
 if MODE not in {"NEU", "RESUME"}:
     raise ValueError("Training-Mode 'MODE' entweder 'NEU' oder 'RESUME' eingeben!")
 
+# Training-Hyperparameter
 GAMMA = 0.99
 ACTOR_LR = 0.0003
-CRITIC_LR = 0.0001
-ENTROPY_COEF = 0.001
+CRITIC_LR = 0.0003
+ENTROPY_COEF = 0.0025
 VALUE_COEF = 0.5
 
 
@@ -162,7 +163,6 @@ def save_training_log(path, return_log, area_log, actor_loss_log, critic_loss_lo
     )
 
 
-# Hauptfunktion
 def main():
     # Hyperparameter
     cfg = EnvConfig()
@@ -175,7 +175,7 @@ def main():
 
     eval_every = 200          # alle 200 Trainings-Episoden evaluieren
     eval_episodes = 20        # Evaluation über 20 Episoden
-    eval_noise = 0.0          
+    eval_noise = EnvConfig().adv_noise_scale      
 
     # Environment
     env = FingerEllipseEnv(cfg=cfg, render_mode=None)
@@ -190,7 +190,7 @@ def main():
     actor_optimizer = optim.Adam(actor.parameters(), lr=ACTOR_LR)
     critic_optimizer = optim.Adam(critic.parameters(), lr=CRITIC_LR)
 
-    # -------- Resume: nur Gewichte laden --------
+    # Resume: nur Gewichte laden 
     start_episode = 0
     if RESUME_PATH is not None:
         checkpoint = torch.load(RESUME_PATH, map_location=device)
@@ -219,7 +219,6 @@ def main():
 
 
     # Trainingsloop
-    # for episode in range(1, num_episodes + 1):
     for episode in range(start_episode + 1, start_episode + num_episodes + 1):
         metrics = train_one_episode(
             env=env,
@@ -239,10 +238,9 @@ def main():
         critic_loss_log.append(metrics["critic_loss"])
         entropy_log.append(metrics["entropy"])
 
-        # Periodische Evaluation
+        # Periodische Evaluierung
         if episode % eval_every == 0 or episode == start_episode + num_episodes:
             actor.eval()
-            # critic.eval()
 
             eval_summary = evaluate(
                 actor=actor,
@@ -289,7 +287,6 @@ def main():
                 )
 
             actor.train()
-            # critic.train()
 
         # Regelmäßiges Logging
         if episode % eval_every == 0 or episode == 1:
