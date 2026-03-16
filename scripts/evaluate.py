@@ -4,10 +4,11 @@ import torch
 
 from finger_env import FingerEllipseEnv, EnvConfig
 from actor_critic import Actor, Critic
+from visualize_results import plot_eval_records
 
 device = EnvConfig().device
 
-MODE = "eval"   # "render" oder "eval"
+MODE = "render"   # "render" oder "eval"
 EVALUATE_EPISODES_NUM = 50
 SEED = 5
 
@@ -20,8 +21,18 @@ def load_model(checkpoint_path):
 
     env = FingerEllipseEnv(cfg=cfg)
 
-    obs_dim = env.observation_space.shape[0]
-    act_dim = env.action_space.shape[0]
+    observation_space = env.observation_space
+    action_space = env.action_space
+    if observation_space is None or action_space is None:
+        raise ValueError("Environment muss observation_space und action_space definieren.")
+
+    obs_shape = observation_space.shape
+    act_shape = action_space.shape
+    if obs_shape is None or act_shape is None:
+        raise ValueError("observation_space.shape und action_space.shape dürfen nicht None sein.")
+
+    obs_dim = obs_shape[0]
+    act_dim = act_shape[0]
 
     actor = Actor(obs_dim, act_dim).to(device)
     critic = Critic(obs_dim).to(device)
@@ -148,7 +159,7 @@ def main():
             # checkpoint_path="checkpoints/continue-training/3000-episoden&0.25-noise-scale/best_by_eval_area.pt",
             # checkpoint_path="checkpoints/100000-episoden-parallel/best_by_eval_return.pt",
             
-            adv_noise_scale=1.0,
+            adv_noise_scale=0.0,
             seed=SEED,
         )
 
@@ -176,6 +187,7 @@ def main():
 
         # adv_noise_scale = [0.0, 0.25, 0.5, 0.75]
         adv_noise_scale = [0.0, 0.1, 0.25, 0.5, 0.75]
+        eval_records = {}
 
         for ckpt in checkpoints:
 
@@ -184,10 +196,12 @@ def main():
             print("=" * 20)
 
             actor, cfg = load_model(ckpt)
+            summaries_for_checkpoint = []
 
             for noise in adv_noise_scale:
 
                 summary = evaluate(actor, cfg, noise)
+                summaries_for_checkpoint.append(summary)
 
                 print(
                     f"noise={noise:.2f} | "
@@ -197,6 +211,30 @@ def main():
                     f"axis_ratio={summary['axis_ratio']:.3f} | "
                 )
 
+            eval_records[ckpt] = summaries_for_checkpoint
 
+        plot_eval_records(
+            records_by_checkpoint=eval_records,
+            noise_levels=adv_noise_scale,
+            metric="return",
+        )
+
+        plot_eval_records(
+            records_by_checkpoint=eval_records,
+            noise_levels=adv_noise_scale,
+            metric="area",
+        )
+
+        plot_eval_records(
+            records_by_checkpoint=eval_records,
+            noise_levels=adv_noise_scale,
+            metric="closure",
+        )
+
+        plot_eval_records(
+            records_by_checkpoint=eval_records,
+            noise_levels=adv_noise_scale,
+            metric="axis_ratio",
+        )
 if __name__ == "__main__":
     main()

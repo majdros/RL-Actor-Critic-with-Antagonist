@@ -9,12 +9,13 @@ from finger_env import FingerEllipseEnv, EnvConfig
 from actor_critic import Actor, Critic
 from rollout import collect_rollout
 from evaluate import evaluate
+from visualize_results import plot_training_curves_from_logs
 
 
 device = EnvConfig().device
-EPISODEN = 3000            # Anzahl von Training-Episoden
+EPISODEN = 3000          # Anzahl von Training-Episoden
 
-MODE = "RESUME"            # Neu: Training ein frische Policy, RESUME: besthende Policy weiter trainineren 
+MODE = "NEU"            # Neu: Training ein frische Policy, RESUME: besthende Policy weiter trainineren 
 
 ## Training von vorne ##
 if MODE == "NEU":
@@ -323,114 +324,17 @@ def main():
     print(f"Best mean eval return: {best_eval_return:.4f}")
     print(f"Best mean eval area:   {best_eval_area:.4f}")
 
-# Visuallisierung
-    import matplotlib.pyplot as plt
-    import numpy as np
-
-    # x-Achse = Episodennummern
-    episodes = np.arange(1, len(return_log) + 1)
-
-    # einfache Glättung
-    def moving_average(x, window=100):
-        if len(x) < window:
-            return np.array(x)
-        return np.convolve(x, np.ones(window) / window, mode="valid")
-
-
-    # Plot 1: Return 
-    plt.figure(figsize=(12, 6))
-    plt.plot(episodes, return_log, alpha=0.4, label="Episode return")
-
-    ret_smooth = moving_average(return_log, window=100)
-    ret_label = (
-        f"Moving average (100) "
-        f"[min={ret_smooth.min():.4f}, max={ret_smooth.max():.4f}, mean={ret_smooth.mean():.4f}]"
+    plot_training_curves_from_logs(
+        save_dir=SAVE_DIR,
+        cfg=cfg,
+        total_episodes=EPISODEN,
+        return_log=return_log,
+        area_log=area_log,
+        actor_loss_log=actor_loss_log,
+        critic_loss_log=critic_loss_log,
+        entropy_log=entropy_log,
+        ma_window=100,
     )
-    if len(return_log) >= 100:
-        plt.plot(np.arange(100, len(return_log) + 1), ret_smooth, label=ret_label)
-    else:
-        plt.plot(episodes, ret_smooth, label=ret_label)
-
-    plt.xlabel("Episode")
-    plt.ylabel("Return")
-    plt.title(f"Training Curve: Episode Return, adv_noise_scale:{cfg.adv_noise_scale}, Episoden:{EPISODEN}")
-    plt.grid(True)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(os.path.join(SAVE_DIR, "training_curve_return.png"), dpi=200, bbox_inches="tight")
-    plt.show()
-
-
-    # Plot 2: Area 
-    plt.figure(figsize=(12, 6))
-    plt.plot(episodes, area_log, alpha=0.4, label="Final ellipse area")
-
-    area_smooth = moving_average(area_log, window=100)
-    area_label = (
-        f"Moving average (100) "
-        f"[min={area_smooth.min():.4f}, max={area_smooth.max():.4f}, mean={area_smooth.mean():.4f}]"
-    )
-    if len(area_log) >= 100:
-        plt.plot(np.arange(100, len(area_log) + 1), area_smooth, label=area_label)
-    else:
-        plt.plot(episodes, area_smooth, label=area_label)
-
-    plt.xlabel("Episode")
-    plt.ylabel("Area")
-    plt.title(f"Training Curve: Final Ellipse Area, adv_noise_scale={cfg.adv_noise_scale}, Episoden:{EPISODEN}")
-    plt.grid(True)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(os.path.join(SAVE_DIR, "training_curve_area.png"), dpi=200, bbox_inches="tight")
-    plt.show()
-
-
-    # plot 3: Acotr & Critic Loss
-    plt.figure(figsize=(12, 6))
-    plt.plot(episodes, actor_loss_log, alpha= 0.4, label="Acotr loss")
-    plt.plot(episodes, critic_loss_log, alpha= 0.4, label="Critic loss")
-
-    actor_loss_smooth = moving_average(actor_loss_log, window=100)
-    critic_loss_smooth = moving_average(critic_loss_log, window=100)
-
-    if len(actor_loss_log) >= 100:
-        episodes_smooth = np.arange(100, len(actor_loss_log) + 1)
-    else:
-        episodes_smooth = episodes
-
-    plt.plot(episodes_smooth, actor_loss_smooth, label="Actor loss MA(100)")
-    plt.plot(episodes_smooth, critic_loss_smooth, label="Critic loss MA(100)")
-
-    plt.xlabel("Episode")
-    plt.ylabel("Value")
-    plt.title(f"Training Curve: Actor & Critic Loss, adv_noise_scale={cfg.adv_noise_scale}, Episoden:{EPISODEN}")
-    plt.grid(True)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(os.path.join(SAVE_DIR, "training_curve_losses.png"), dpi=200, bbox_inches="tight")
-    plt.show()
-
-
-    # Plot 4: Entropy
-    plt.figure(figsize=(12, 6))
-    plt.plot(episodes, entropy_log, alpha=0.35, label="Entropy")
-
-    entropy_smooth = moving_average(entropy_log, window=100)
-    if len(entropy_log) >= 100:
-        episodes_smooth = np.arange(100, len(entropy_log) + 1)
-    else:
-        episodes_smooth = episodes
-
-    plt.plot(episodes_smooth, entropy_smooth, label="Entropy MA(100)")
-
-    plt.xlabel("Episode")
-    plt.ylabel("Entropy")
-    plt.title(f"Training Curve: Policy Entropy, adv_noise_scale={cfg.adv_noise_scale}, Episoden:{EPISODEN}")
-    plt.grid(True)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(os.path.join(SAVE_DIR, "training_curve_entropy.png"), dpi=200, bbox_inches="tight")
-    plt.show()    
 
 if __name__ == "__main__":
     main()

@@ -39,20 +39,24 @@ class EnvConfig:
     w_action: float = 0.02        # Dense Energie-Strafe:[0.2, 0.4, 0.5] sum ||action||^2 {0.05 -> 0.02 einfriert}
     min_axis_ratio: float = 0.35  # tau
 
-    # antagonist Stärke in Rad [0.0, 0.2, 0.5, 0.75]
-    adv_noise_scale: float = 0.25  # relative zu max_delta => 0.05 * 0.02 = 0.001 rad ~ 0.057°
-    # relative zu max_delta => 0.25 * 0.05 = 0.0125 rad ~ 0.72°
+    # antagonist Stärke in rad [0.0, 0.1, 0.25, 0.5, 0.75]
+    adv_noise_scale: float = 0.25  # relative zu max_delta => 0.25 * 0.05 = 0.0125 rad ~ 0.72°
 
 
 class FingerEllipseEnv(gym.Env):
     """
-    Planar 3R finger (anthropomorphic index finger surrogate).
+        Planarer 3R-Finger zur Erzeugung einer großen, nicht-degenerierten Trajektorien-Ellipse.
 
-    Ziel: Erstellung einer großen Ellipse (PCA-basierter Proxy) aus der fingertip Trajektorie.
-    - Action: delta joint angles (3,)
-    - Observation: [sin/cos(theta1..3), x,y, phase]
-    - Episode Länge: fixed horizon
-    - Reward: dense area increment - action penalty + terminal penalties
+        - Action: delta-Gelenkwinkel (3,), begrenzt auf [-max_delta, +max_delta]
+        - Observation: [sin/cos(theta1..3), x_norm, y_norm, phase]
+        - Episode: feste Länge (horizon), terminated=False, Abschluss über truncated
+        - Dynamik: optionaler antagonistischer Störterm (adv_noise_scale) auf die Action
+        - Reward (dense):
+            + Flächenzuwachs (PCA/Kovarianz), phasenabhängig gewichtet
+            + Closure-Verbesserung ab spätem Episodenabschnitt
+            - Aktionsenergie (L2)
+            - Degenerationsstrafe bei kleinem Achsenverhältnis b/a
+        - Zusätzlich am Episodenende: terminale Penalty aus Closure + Degeneration
     """
 
     metadata = {"render_modes": ["human"], "render_fps": 30}
@@ -78,7 +82,6 @@ class FingerEllipseEnv(gym.Env):
 
         # observation_space: Alle features skaliert zu [-1, 1]
         high = [1.0] * 9
-
         high = np.array(high, dtype=np.float32)
         self.observation_space = spaces.Box(low=-high, high=high, dtype=np.float32)
 
@@ -119,9 +122,9 @@ class FingerEllipseEnv(gym.Env):
         ]
 
         x, y = self.fingertip_xy(self.theta)
-        parts += [x / self.reichweite, y / self.reichweite]           # Koordinaten normalisieren [-1, 1]
+        parts += [x / self.reichweite, y / self.reichweite]  # Koordinaten normalisieren [-1, 1]
 
-        self.phase = [self.t /float(self.cfg.horizon)]                # Zeit normieren [0, 1]
+        self.phase = [self.t /float(self.cfg.horizon)]       # Zeit normieren [0, 1]
         parts += self.phase            
 
         return np.array(parts, dtype=np.float32)
@@ -243,8 +246,9 @@ class FingerEllipseEnv(gym.Env):
         ## Alle Points in 'pts_now' speichern und die Fläche der Ellipse berechnen
         pts_now = self.traj[: self.t + 1]  # p0..p_{t+1}
         area_now, a, b, detSigma = self.ellipse_area_from_covdet(pts_now)
-        # alpha_area_t = 1.0 if phase < 0.8 else 0.2       # Ab 80% der Episode Fläche nicht mehr beürcksichtigen
-        alpha_area_t = max(0.2, 1.0 - max(0.0, (phase - 0.8) / 0.2)) # bis 80% Phase Fläche komplett als reward nehemen! Phase => 80 % phase fällt linear und bleibt mindestens bei 0.2
+        # Bis 80% Phase Fläche komplett als reward nehemen
+        # Phase >= 80 % Flächen-reward fällt linear und bleibt mindestens bei 0.2
+        alpha_area_t = max(0.2, 1.0 - max(0.0, (phase - 0.8) / 0.2))
         r_area_dense = alpha_area_t * (area_now - self.prev_area)
         self.prev_area = area_now
 
@@ -272,12 +276,15 @@ class FingerEllipseEnv(gym.Env):
             "r_degen_dense": float(r_degen_dense),
             "reward_dense": float(reward),
         }
+
         truncated = (self.t >= self.cfg.horizon)
         terminated = False
 
+        # Terinal Penalty
         if truncated or terminated:
             penalty, penalty_info = self.terminal_penalty()
             info.update(penalty_info)
+            # Terminal Penalty von Dense-Reward abziehen
             reward -= float(penalty)
 
         return float(reward), info, truncated, terminated

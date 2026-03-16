@@ -4,11 +4,16 @@ import matplotlib.pyplot as plt
 import torch
 
 from finger_env import FingerEllipseEnv, EnvConfig
-from evaluate import load_model, select_action, evaluate
 
 SEED = 0
 EVALUATE_EPISODES_NUM = 50
 CHECKPOINT="checkpoints/20446-episoden/best_by_eval_return.pt"
+
+
+def _checkpoint_label(checkpoint_path):
+    parent = os.path.basename(os.path.dirname(checkpoint_path))
+    filename = os.path.splitext(os.path.basename(checkpoint_path))[0]
+    return f"{parent}/{filename}"
 
 def load_training_log(checkpoint_path):
     candidate_paths = [
@@ -70,6 +75,8 @@ def plot_learning_curves_from_checkpoint(checkpoint_path):
 
 
 def run_trained_trajectory(checkpoint_path, adv_noise_scale=0.0, seed=SEED):
+    from evaluate import load_model, select_action
+
     actor, cfg = load_model(checkpoint_path)
 
     eval_cfg = EnvConfig(**cfg.__dict__)
@@ -174,7 +181,126 @@ def plot_learning_curves(log):
         plt.show()
 
 
+def plot_training_curves_from_logs(
+    save_dir,
+    cfg,
+    total_episodes,
+    return_log,
+    area_log,
+    actor_loss_log,
+    critic_loss_log,
+    entropy_log,
+    ma_window=100,
+):
+    episodes = np.arange(1, len(return_log) + 1)
+
+    def moving_average(values, window=ma_window):
+        if len(values) < window:
+            return np.array(values)
+        return np.convolve(values, np.ones(window) / window, mode="valid")
+
+    plt.figure(figsize=(12, 6))
+    plt.plot(episodes, return_log, alpha=0.4, label="Episode return")
+    ret_smooth = moving_average(return_log)
+    ret_label = (
+        f"Moving average ({ma_window}) "
+        f"[min={ret_smooth.min():.4f}, max={ret_smooth.max():.4f}, mean={ret_smooth.mean():.4f}]"
+    )
+    if len(return_log) >= ma_window:
+        plt.plot(np.arange(ma_window, len(return_log) + 1), ret_smooth, label=ret_label)
+    else:
+        plt.plot(episodes, ret_smooth, label=ret_label)
+
+    plt.xlabel("Episode")
+    plt.ylabel("Return")
+    plt.title(
+        f"Training Curve: Episode Return, adv_noise_scale:{cfg.adv_noise_scale}, "
+        f"Episoden:{total_episodes}"
+    )
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, "training_curve_return.png"), dpi=200, bbox_inches="tight")
+    plt.show()
+
+    plt.figure(figsize=(12, 6))
+    plt.plot(episodes, area_log, alpha=0.4, label="Final ellipse area")
+    area_smooth = moving_average(area_log)
+    area_label = (
+        f"Moving average ({ma_window}) "
+        f"[min={area_smooth.min():.4f}, max={area_smooth.max():.4f}, mean={area_smooth.mean():.4f}]"
+    )
+    if len(area_log) >= ma_window:
+        plt.plot(np.arange(ma_window, len(area_log) + 1), area_smooth, label=area_label)
+    else:
+        plt.plot(episodes, area_smooth, label=area_label)
+
+    plt.xlabel("Episode")
+    plt.ylabel("Area")
+    plt.title(
+        f"Training Curve: Final Ellipse Area, adv_noise_scale={cfg.adv_noise_scale}, "
+        f"Episoden:{total_episodes}"
+    )
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, "training_curve_area.png"), dpi=200, bbox_inches="tight")
+    plt.show()
+
+    plt.figure(figsize=(12, 6))
+    plt.plot(episodes, actor_loss_log, alpha=0.4, label="Actor loss")
+    plt.plot(episodes, critic_loss_log, alpha=0.4, label="Critic loss")
+
+    actor_loss_smooth = moving_average(actor_loss_log)
+    critic_loss_smooth = moving_average(critic_loss_log)
+
+    if len(actor_loss_log) >= ma_window:
+        episodes_smooth = np.arange(ma_window, len(actor_loss_log) + 1)
+    else:
+        episodes_smooth = episodes
+
+    plt.plot(episodes_smooth, actor_loss_smooth, label=f"Actor loss MA({ma_window})")
+    plt.plot(episodes_smooth, critic_loss_smooth, label=f"Critic loss MA({ma_window})")
+
+    plt.xlabel("Episode")
+    plt.ylabel("Value")
+    plt.title(
+        f"Training Curve: Actor & Critic Loss, adv_noise_scale={cfg.adv_noise_scale}, "
+        f"Episoden:{total_episodes}"
+    )
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, "training_curve_losses.png"), dpi=200, bbox_inches="tight")
+    plt.show()
+
+    plt.figure(figsize=(12, 6))
+    plt.plot(episodes, entropy_log, alpha=0.35, label="Entropy")
+
+    entropy_smooth = moving_average(entropy_log)
+    if len(entropy_log) >= ma_window:
+        episodes_smooth = np.arange(ma_window, len(entropy_log) + 1)
+    else:
+        episodes_smooth = episodes
+
+    plt.plot(episodes_smooth, entropy_smooth, label=f"Entropy MA({ma_window})")
+
+    plt.xlabel("Episode")
+    plt.ylabel("Entropy")
+    plt.title(
+        f"Training Curve: Policy Entropy, adv_noise_scale={cfg.adv_noise_scale}, "
+        f"Episoden:{total_episodes}"
+    )
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, "training_curve_entropy.png"), dpi=200, bbox_inches="tight")
+    plt.show()
+
+
 def plot_robustness(checkpoint_path):
+    from evaluate import load_model, evaluate
+
     actor, cfg = load_model(checkpoint_path)
 
     noise_levels = [0.0, 0.1, 0.25, 0.5, 0.75]
@@ -222,6 +348,63 @@ def plot_robustness(checkpoint_path):
 
     fig.suptitle("Robustness Evaluation across adv_noise_scale", y=0.98)
     plt.tight_layout(rect=(0.0, 0.0, 1.0, 0.95))
+    plt.show()
+
+
+def plot_eval_mode_results(
+    checkpoints,
+    noise_levels,
+    metric="return",
+    num_episodes=EVALUATE_EPISODES_NUM,
+):
+    from evaluate import load_model, evaluate
+
+    plt.figure(figsize=(14, 7))
+
+    for checkpoint_path in checkpoints:
+        actor, cfg = load_model(checkpoint_path)
+        metric_values = []
+
+        for noise in noise_levels:
+            summary = evaluate(actor, cfg, adv_noise_scale=noise, num_episodes=num_episodes)
+            metric_values.append(float(summary[metric]))
+
+        plt.plot(
+            noise_levels,
+            metric_values,
+            marker="o",
+            linewidth=2,
+            label=_checkpoint_label(checkpoint_path),
+        )
+
+    plt.xlabel("Antagonist noise scale")
+    plt.ylabel(f"Mean {metric}")
+    plt.title(f"Evaluation across adv_noise_scale ({metric})")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_eval_records(records_by_checkpoint, noise_levels, metric="return"):
+    plt.figure(figsize=(14, 7))
+
+    for checkpoint_path, summaries in records_by_checkpoint.items():
+        metric_values = [float(summary[metric]) for summary in summaries]
+        plt.plot(
+            noise_levels,
+            metric_values,
+            marker="o",
+            linewidth=2,
+            label=_checkpoint_label(checkpoint_path),
+        )
+
+    plt.xlabel("Antagonist noise scale")
+    plt.ylabel(f"Mean {metric}")
+    plt.title(f"Evaluation across adv_noise_scale ({metric})")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
     plt.show()
 
 

@@ -1,14 +1,14 @@
 .vscode/
-Actor_Critic/
+actor-critic/
+aufgabenstellung/
 checkpoints/
 figures/
+!scripts/figures
 scripts/rollout_parallel.py
 scripts/train_parallel.py
-Final_Examination.pdf
 test.py
 np_test.py
 scripts/tests/
-scripts/res/
+scripts/ac.py
 scripts/finger_env copy.py
 __pycache__
-*.png
