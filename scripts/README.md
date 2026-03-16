@@ -253,7 +253,7 @@ Mit `w_action = 0.02` . Dieser Term wird vom Reward abgezogen.
 **(c) Degenerationsstrafe (Degeneration)**
 
 $$
-	ext{hinge}=\max(0,\;\text{min\_axis\_ratio}-b/a)
+   \mathrm{hinge}=\max(0,\;\text{min\_axis\_ratio}-b/a)
 $$
 
 $$
@@ -323,7 +323,7 @@ Für die Gesamtübersicht der Phasen-Gewichte (`alpha_area`, `alpha_degen`, `alp
 
 ![Reward Phase Weights](reward_plotten/reward_design_phase_weights.png)
 
-##### 2) Terminale Penalty (nur im letzten Schritt)
+##### 2) Terminale Penalty
 
 Am Episodenende (`truncated` oder `terminated`) wird zusätzlich abgezogen:
 
@@ -340,7 +340,7 @@ $$
 Mit `w_degen = 0.1` .
 
 $$
-	ext{terminal\_penalty}=p_{close}+p_{degen}
+   \mathrm{terminal\_penalty}=p_{close}+p_{degen}
 $$
 
 Final im letzten Schritt:
