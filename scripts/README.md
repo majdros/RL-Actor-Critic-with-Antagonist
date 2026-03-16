@@ -24,8 +24,6 @@ scripts/
 ├── rollout.py                    # Single-Env Rollout
 ├── evaluate.py                   # Modell laden, evaluieren, rendern
 ├── visualize_results.py          # Lernkurven/Robustheit/Trajektorie/ plotten
-├── rollout_parallel.py           # Vectorized Rollout für AsyncVectorEnv
-├── train_parallel.py             # Parallel-Training (N Envs)
 ├── res/
 ├── requirements.txt
 
@@ -97,24 +95,10 @@ Output (in `checkpoints/...`):
 - `training_curve_losses.png`
 - `training_curve_entropy.png`
 
-### Schritt 3 – Training starten (Parallel)
-
-Datei: `scripts/train_parallel.py`
-
-Wichtige Parameter:
-- `EPISODEN`
-- `NUM_ENVS`
-- `MODE` / `RESUME_PATH`
-
-Start:
-
-```bash
-python scripts/train_parallel.py
-```
 
 Die Logik ist analog zu `train.py`, aber mit vectorized Rollouts (`AsyncVectorEnv`) und effektiven Episodenachsen.
 
-### Schritt 4 – Modell evaluieren oder rendern
+### Schritt 3 – Modell evaluieren oder rendern
 
 Datei: `scripts/evaluate.py`
 
@@ -149,7 +133,7 @@ Erzeugt folgndes Plotts:
 
 ---
 
-## 5) Prjektstruktur und Komponenten
+## 4) Prjektstruktur und Komponenten
 
 ### 1  `finger_env.py`
 
@@ -222,13 +206,13 @@ Im `step()`:
 
 #### Geometriebasis (Ellipse aus Punktwolke)
 
-Aus der bisherigen Trajektorie wird über die Kovarianzmatrix \(\Sigma\) eine PCA-Ellipse geschätzt:
+Aus der bisherigen Trajektorie wird über die Kovarianzmatrix $\Sigma$ eine PCA-Ellipse geschätzt:
 
-\[
+$$
 A = \pi \cdot k_{axis}^2 \cdot \sqrt{\det(\Sigma)}
-\]
+$$
 
-Dabei sind \(a, b\) die Halbachsen und `axis_ratio = b/a`.
+Dabei sind $a, b$ die Halbachsen und `axis_ratio = b/a`.
 `k_axis` aus `EnvConfig` hat standardmäßig den Wert **1.0**.
 
 #### Reward-Funktion (Dense + Terminal)
@@ -239,15 +223,15 @@ Die Reward-Berechnung in `reward_function()` ist **phasenabhängig** und besteht
 
 **(a) Flächenterm (Area)**
 
-\[
+$$
 r_{area}(t)=\alpha_{area}(t)\cdot(A_t-A_{t-1})
-\]
+$$
 
 mit
 
-\[
+$$
 \alpha_{area}(t)=\max\left(0.2,\;1-\max\left(0,\frac{\text{phase}-0.8}{0.2}\right)\right)
-\]
+$$
 
 
 
@@ -258,9 +242,9 @@ mit
 
 **(b) Aktionskosten (Action)**
 
-\[
+$$
 r_{action}(t)=w_{action}\cdot\|a_t\|^2
-\]
+$$
 
 Mit `w_action = 0.02` . Dieser Term wird vom Reward abgezogen.
 
@@ -268,19 +252,19 @@ Mit `w_action = 0.02` . Dieser Term wird vom Reward abgezogen.
 
 **(c) Degenerationsstrafe (Degeneration)**
 
-\[
-   {hinge}=\max(0,\;\text{min\_axis\_ratio}-b/a)
-\]
+$$
+	ext{hinge}=\max(0,\;\text{min\_axis\_ratio}-b/a)
+$$
 
-\[
+$$
 r_{degen}(t)=w_{degen\_dense}\cdot\alpha_{degen}(t)\cdot\text{hinge}^2
-\]
+$$
 
 mit
 
-\[
+$$
 \alpha_{degen}(t)=\max\left(0,\frac{\text{phase}-0.25}{0.75}\right)
-\]
+$$
 
 Mit `min_axis_ratio = 0.35` und `w_degen_dense = 0.01`.
 
@@ -289,15 +273,15 @@ Mit `min_axis_ratio = 0.35` und `w_degen_dense = 0.01`.
 
 **(d) Closure-Term (Closure, späte Phase)**
 
-\[
+$$
 r_{close}(t)=w_{close\_dense}\cdot\alpha_{close}(t)\cdot(d_{t-1}-d_t)
-\]
+$$
 
-mit \(d_t=\|p_t-p_0\|^2\) und
+mit $d_t=\|p_t-p_0\|^2$ und
 
-\[
+$$
 \alpha_{close}(t)=\max\left(0,\frac{\text{phase}-0.7}{0.3}\right)
-\]
+$$
 
 Mit `w_close_dense = 0.05` .
 
@@ -343,21 +327,21 @@ Für die Gesamtübersicht der Phasen-Gewichte (`alpha_area`, `alpha_degen`, `alp
 
 Am Episodenende (`truncated` oder `terminated`) wird zusätzlich abgezogen:
 
-\[
+$$
 p_{close}=w_{close}\cdot\text{closure\_dist2}
-\]
+$$
 
 Mit `w_close = 0.05` .
 
-\[
+$$
 p_{degen}=w_{degen}\cdot\text{hinge}^2
-\]
+$$
 
 Mit `w_degen = 0.1` .
 
-\[
-   ext{terminal\_penalty}=p_{close}+p_{degen}
-\]
+$$
+	ext{terminal\_penalty}=p_{close}+p_{degen}
+$$
 
 Final im letzten Schritt:
 
@@ -385,18 +369,17 @@ Final im letzten Schritt:
   - Endeffektor-Trajektorie,
   - feste Achsenskalierung auf den Arbeitsraum `l1+l2+l3`.
 
-### `actor_critic.py`
+### 2 `actor_critic.py`
 
 - `Actor`: Gauß-Policy mit Tanh-Squashing
-- `Critic`: Zustandswert `V(s)`
+- `Critic`: state value function `V(s)`
 - `choose_action(...)` liefert gesampelte Aktion, Log-Prob und Entropie
 
-### `rollout.py` / `rollout_parallel.py`
+### 3 `rollout.py`
 
-- sammeln Trainingsdaten für Actor-Critic-Update
-- parallel: mehrere Umgebungen gleichzeitig, inklusive robuster Verarbeitung von `final_info`
+- sammeln Trainingsdaten bei 256 Schritten bzw. einer Episode für Actor-Critic-Update
 
-### `train.py` / `train_parallel.py`
+### 4 `train.py`
 
 - Monte-Carlo Returns
 - Advantage-Normalisierung
@@ -404,50 +387,26 @@ Final im letzten Schritt:
 - regelmäßige Evaluation via `evaluate(...)`
 - Speichern von Best-/Last-Checkpoints + Trainingslog + Kurvenplots
 
-### `evaluate.py`
-
+### 5 `evaluate.py`
+   Evaluiert eine Policy über bestimmte Anzahl von Episoden `EVALUATE_EPISODES_NUM = 50`
+   mit einem bestimmten seed `SEED = 5
 - lädt Checkpoint (`actor_state_dict`, `critic_state_dict`, `config`)
 - spielt Episoden deterministisch über `tanh(mu)`
 - aggregiert Metriken über mehrere Episoden
 
-### `visualize_results.py`
+### 6 `visualize_results.py`
 
 - Lernkurven aus Logs
 - Trajektorie inkl. PCA-Ellipse
 - Robustheit über Noise-Level
 
-### `ac.py`
-
-- separater, älterer Prototyp/Sketch
-- nicht Teil der aktuellen Hauptpipeline (`train.py` / `train_parallel.py`)
-
 ---
 
-## 6) Tests ausführen
 
-Die Tests in `scripts/tests/` sind als ausführbare Python-Skripte geschrieben.
-
-Vom Projekt-Root aus z. B.:
-
-```bash
-python scripts/tests/test_ellipse_area_correctness.py
-python scripts/tests/test_random_policy_rollouts.py --episodes 20 --horizon 128
-python scripts/tests/test_reward_learnability.py --search-iters 120
-python scripts/tests/test_visualization_human.py --steps 128
-```
-
-### Wichtiger Hinweis zu `test_reward_analysis.py`
-
-`test_reward_analysis.py` erwartet aktuell das Info-Feld `d_area`.
-In `finger_env.py` wird jedoch `r_area_dense` ausgegeben, nicht `d_area`.
-Dadurch kann dieser Test ohne Anpassung fehlschlagen (`KeyError`).
-
----
-
-## 7) Häufige Stolpersteine
+## 5) Häufige Errors
 
 1. **Falscher `MODE` im Training**
-   - In `train.py`/`train_parallel.py` muss `MODE` exakt `"NEU"` oder `"RESUME"` sein.
+   - In `train.py` muss `MODE` exakt `"NEU"` oder `"RESUME"` sein.
 
 2. **Ungültiger Checkpoint-Pfad bei Resume/Eval**
    - Prüfe `RESUME_PATH` bzw. Pfade in `evaluate.py`.
@@ -456,44 +415,7 @@ Dadurch kann dieser Test ohne Anpassung fehlschlagen (`KeyError`).
    - `render_mode="human"` braucht grafische Oberfläche.
 
 4. **Importprobleme beim direkten Ausführen aus Unterordnern**
-   - Empfohlen: Skripte vom Projekt-Root aus starten (`python scripts/...`).
+   - Skripte vom Projekt-Root aus starten (`python scripts/...`).
 
 5. **Unklare Vergleichbarkeit von Runs**
    - Konfigurationen, Seeds und Noise-Level pro Run protokollieren.
-
----
-
-## 8) Empfohlene Experiment-Routine
-
-1. `train.py` oder `train_parallel.py` mit klarer Konfiguration starten.
-2. Beste Modelle (`best_by_eval_return.pt`, `best_by_eval_area.pt`) notieren.
-3. Mit `evaluate.py` auf mehreren `adv_noise_scale`-Werten evaluieren.
-4. Mit `visualize_results.py` Trajektorie und Lernkurven dokumentieren.
-5. Kern-Tests aus `scripts/tests/` ausführen.
-
----
-
-## 9) Nützliche Startkommandos (Copy-Paste)
-
-```bash
-# 1) Training (single)
-python scripts/train.py
-
-# 2) Training (parallel)
-python scripts/train_parallel.py
-
-# 3) Evaluation / Render
-python scripts/evaluate.py
-
-# 4) Visualisierung
-python scripts/visualize_results.py
-
-# 5) Beispieltests
-python scripts/tests/test_ellipse_area_correctness.py
-python scripts/tests/test_random_policy_rollouts.py
-python scripts/tests/test_reward_learnability.py
-```
-
----
-
-Wenn du möchtest, machen wir als nächsten Schritt eine **projektweite Vereinheitlichung der Konfiguration** (CLI-Argumente statt Hardcoding in den Skripten), damit Experimente reproduzierbarer und die README noch präziser werden.
