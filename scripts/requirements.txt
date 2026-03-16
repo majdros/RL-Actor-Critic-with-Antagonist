@@ -1,0 +1,7 @@
+# Install via:
+#   pip install -r scripts/requirements.txt
+
+torch>=2.7
+gymnasium>=1.2.3
+numpy>=1.26.4
+matplotlib>=3.10.8
