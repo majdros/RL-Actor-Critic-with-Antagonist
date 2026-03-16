@@ -253,11 +253,11 @@ Mit `w_action = 0.02` . Dieser Term wird vom Reward abgezogen.
 **(c) Degenerationsstrafe (Degeneration)**
 
 $$
-   \mathrm{hinge}=\max(0,\;\text{min\_axis\_ratio}-b/a)
+   \mathrm{hinge}=\max(0,\;\mathrm{minAxisRatio}-b/a)
 $$
 
 $$
-r_{degen}(t)=w_{degen\_dense}\cdot\alpha_{degen}(t)\cdot\text{hinge}^2
+r_{degen}(t)=w_{\mathrm{degenDense}}\cdot\alpha_{degen}(t)\cdot\mathrm{hinge}^2
 $$
 
 mit
@@ -328,19 +328,19 @@ Für die Gesamtübersicht der Phasen-Gewichte (`alpha_area`, `alpha_degen`, `alp
 Am Episodenende (`truncated` oder `terminated`) wird zusätzlich abgezogen:
 
 $$
-p_{close}=w_{close}\cdot\text{closure\_dist2}
+p_{close}=w_{\mathrm{close}}\cdot\mathrm{closureDist2}
 $$
 
 Mit `w_close = 0.05` .
 
 $$
-p_{degen}=w_{degen}\cdot\text{hinge}^2
+p_{degen}=w_{\mathrm{degen}}\cdot\mathrm{hinge}^2
 $$
 
 Mit `w_degen = 0.1` .
 
 $$
-   \mathrm{terminal\_penalty}=p_{close}+p_{degen}
+   \mathrm{terminalPenalty}=p_{close}+p_{degen}
 $$
 
 Final im letzten Schritt:
