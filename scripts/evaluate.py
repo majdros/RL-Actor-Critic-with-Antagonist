@@ -8,7 +8,7 @@ from visualize_results import plot_eval_records
 
 device = EnvConfig().device
 
-MODE = "render"   # "render" oder "eval"
+MODE = "eval"   # "render" oder "eval"
 EVALUATE_EPISODES_NUM = 50
 SEED = 5
 
@@ -155,10 +155,7 @@ def render_trained_episode(checkpoint_path, adv_noise_scale, seed= SEED):
 def main():
     if MODE == "render":
         render_trained_episode(
-            checkpoint_path="checkpoints/20446-episoden/best_by_eval_return.pt",
-            # checkpoint_path="checkpoints/continue-training/3000-episoden&0.25-noise-scale/best_by_eval_area.pt",
-            # checkpoint_path="checkpoints/100000-episoden-parallel/best_by_eval_return.pt",
-            
+            checkpoint_path="best_modell/best_by_eval_return.pt",
             adv_noise_scale=0.0,
             seed=SEED,
         )
@@ -166,26 +163,9 @@ def main():
 
     else:
         checkpoints = [
-            # "checkpoints/20000-episoden/best_by_eval_area.pt",
-            # "checkpoints/20000-episoden/best_by_eval_return.pt",
-            #########################
-            # "checkpoints/20445-episoden/best_by_eval_area.pt",
-            # "checkpoints/20445-episoden/best_by_eval_return.pt",
-            # "checkpoints/20446-episoden/best_by_eval_area.pt",
-            "checkpoints/20446-episoden/best_by_eval_return.pt",
-            # "checkpoints/continue-training/3000-episoden&0.25-noise-scale/best_by_eval_area.pt",
-            # "checkpoints/continue-training/3000-episoden&0.25-noise-scale/best_by_eval_return.pt",
-            #########################
-            # "checkpoints/20500-episoden-parallel/best_by_eval_area.pt",
-            # "checkpoints/20500-episoden-parallel/best_by_eval_return.pt",
-            # "checkpoints/100000-episoden-parallel/best_by_eval_return.pt",
-            # "checkpoints/100000-episoden-parallel/best_by_eval_return.pt",
-            # "checkpoints/continue-training/10000-episoden/best_by_eval_return.pt",
-            # "checkpoints/continue-training/10000-episoden/best_by_eval_area.pt",
-            # "checkpoints/10002-episoden/best_by_return.pt",
+            "best_modell/best_by_eval_return.pt",
         ]
 
-        # adv_noise_scale = [0.0, 0.25, 0.5, 0.75]
         adv_noise_scale = [0.0, 0.1, 0.25, 0.5, 0.75]
         eval_records = {}
 

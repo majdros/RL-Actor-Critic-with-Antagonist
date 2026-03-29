@@ -13,7 +13,7 @@ from visualize_results import plot_training_curves_from_logs
 
 
 device = EnvConfig().device
-EPISODEN = 3000          # Anzahl von Training-Episoden
+EPISODEN = 20500          # Anzahl von Training-Episoden
 
 MODE = "NEU"            # Neu: Training ein frische Policy, RESUME: besthende Policy weiter trainineren 
 

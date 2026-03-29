@@ -14,7 +14,7 @@ import torch
 class EnvConfig:
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    # Rollout horizon (episode Länge)
+    #  horizon 
     horizon: int = 256
 
     # Action ist delta joint winkel pro Step (rad)
@@ -32,15 +32,15 @@ class EnvConfig:
 
     # penalties
     w_area: float = 1.0           # Dense Ellipse-Fläche Reward (1.0: deaktiviert!)
-    w_close: float = 0.05         # Terminal Scließ-Strafe [0.2, 0.4, 0.5]
+    w_close: float = 0.05         # Terminal Scließ-Strafe 
     w_close_dense: float = 0.05   # Dense Schließ-Strafe
     w_degen: float = 0.1          # Terminal Degenerierung-Strafe
     w_degen_dense: float = 0.01   # Dense Degenerierung-Strafe
-    w_action: float = 0.02        # Dense Energie-Strafe:[0.2, 0.4, 0.5] sum ||action||^2 {0.05 -> 0.02 einfriert}
+    w_action: float = 0.02        # Dense Energie-Strafe: sum ||action||^2 {0.05 -> 0.02 einfriert}
     min_axis_ratio: float = 0.35  # tau
 
     # antagonist Stärke in rad [0.0, 0.1, 0.25, 0.5, 0.75]
-    adv_noise_scale: float = 0.25  # relative zu max_delta => 0.25 * 0.05 = 0.0125 rad ~ 0.72°
+    adv_noise_scale: float = 0.0  # relative zu max_delta => 0.25 * 0.05 = 0.0125 rad ~ 0.72°
 
 
 class FingerEllipseEnv(gym.Env):

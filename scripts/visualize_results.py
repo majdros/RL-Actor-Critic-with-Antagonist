@@ -5,9 +5,9 @@ import torch
 
 from finger_env import FingerEllipseEnv, EnvConfig
 
-SEED = 0
+SEED = 5
 EVALUATE_EPISODES_NUM = 50
-CHECKPOINT="checkpoints/20446-episoden/best_by_eval_return.pt"
+CHECKPOINT="best_modell/best_by_eval_return.pt"
 
 
 def _checkpoint_label(checkpoint_path):

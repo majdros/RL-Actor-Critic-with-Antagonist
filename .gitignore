@@ -3,6 +3,7 @@ actor-critic/
 aufgabenstellung/
 checkpoints/
 figures/
+paper/
 !scripts/figures
 scripts/rollout_parallel.py
 scripts/train_parallel.py
@@ -11,4 +12,5 @@ np_test.py
 scripts/tests/
 scripts/ac.py
 scripts/finger_env copy.py
+Team_9/
 __pycache__

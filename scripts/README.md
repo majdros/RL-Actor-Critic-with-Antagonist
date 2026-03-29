@@ -1,8 +1,17 @@
-# Anthropomorphic Finger: Largest Ellipse(Actor-Critic with Antagonist) 
+# Anthropomorphic Finger: Largest Ellipse (Actor-Critic with Antagonist)
 
 Der Fokus liegt auf einem kontinuierlichen Actor-Critic-Algorithmus für das Environment `FingerEllipseEnv`, in dem der Finger eine große, nicht-degenerierte Ellipsen-Trajektorie lernen soll.
 
 ---
+## Overview
+
+In dieser Arbeit wird ein Reinforcement-Learning-Ansatz zur Steuerung eines anthropomorphen Fingers mit drei Freiheitsgraden untersucht. Der Finger wird als planar aufgebauter Roboterarm mit drei rotatorischen Gelenken und festen Linklängen modelliert. Ziel des Lernprozesses ist es, eine Trajektorie der Fingerspitze zu erzeugen, die eine möglichst große Ellipse im erreichbaren Arbeitsraum einschließt.
+
+Zur Lösung dieses Problems wurde ein eigenes Simulations-Environment implementiert, in dem der Agent kontinuierliche Aktionen in Form von Gelenkwinkeländerungen ausführt. Der Zustand des Systems umfasst die Gelenkwinkelrepräsentation, die aktuelle Position der Fingerspitze sowie eine normierte Zeitphase der Episode. Die Qualität einer erzeugten Trajektorie wird über eine Ellipsenschätzung auf Basis der Kovarianz der Trajektorienpunkte bestimmt, wodurch sich Fläche, Achsenverhältnis und weitere geometrische Eigenschaften ableiten lassen.
+
+Als Lernverfahren wird ein Actor–Critic-Algorithmus mit kontinuierlicher Policy eingesetzt. Der Actor erzeugt eine stochastische Aktionsverteilung über die Gelenkbewegungen, während der Critic den Zustandswert approximiert und damit das Policy-Update stabilisiert. Zusätzlich wird ein antagonistischer Störterm eingeführt, der zufällige Aktionsstörungen verursacht und damit die Robustheit der gelernten Strategie gegenüber Unsicherheiten verbessert.
+
+Das Reward-Design kombiniert mehrere Komponenten: ein phasenabhängiges Flächenwachstum der geschätzten Ellipse als Hauptziel, eine Strafe für degenerierte Ellipsenformen, eine Energie-Strafe für übermäßige Gelenkbewegungen sowie eine Terminalbewertung zur Förderung einer geschlossenen Trajektorie. Durch dieses Design wird der Agent dazu angeleitet, stabile, große und geometrisch gültige Ellipsenbewegungen zu erzeugen.
 
 ## 1) Ziel des Projektes
 
@@ -24,7 +33,6 @@ scripts/
 ├── rollout.py                    # Single-Env Rollout
 ├── evaluate.py                   # Modell laden, evaluieren, rendern
 ├── visualize_results.py          # Lernkurven/Robustheit/Trajektorie/ plotten
-├── res/
 ├── requirements.txt
 
 ```
@@ -34,7 +42,7 @@ scripts/
 ## 3) Usage
 ### Schritt 0 - Voraussetzungen
 
-- Python 3.10+ (empfohlen)
+- Python 3.10+
 - PyTorch
 - Gymnasium
 - NumPy
@@ -43,33 +51,55 @@ scripts/
 pip install -r scripts/requirements.txt
 ```
 
-### Schritt 1 – Environment-Konfiguration
+### Schritt 2 – Environment spielen
 
-Die zentralen Environment-Parameter stehen in `scripts/finger_env.py` in `EnvConfig`:
+Das Environment enthält mehrere Hyperparameter, die in Punkt 4.1 detailliert erklärt sind.
+Die Anzahl der Environment-Schritte pro Episode wird über den Hyperparameter `horizon` in der Klasse `EnvConfig` gesteuert.
 
-| Parameter | Wert | Bedeutung |
-|---|---:|---|
-| `device` | `cuda:0` falls verfügbar, sonst `cpu` | Rechen-Device für Tensoren/Modelle. |
-| `l1` | `5.0` | Länge Link 1 in cm. |
-| `l2` | `2.5` | Länge Link 2 in cm. |
-| `l3` | `2.5` | Länge Link 3 in cm. |
-| `theta_min` | `-π/2` | Untere Gelenkgrenze in rad. |
-| `theta_max` | `+π/2` | Obere Gelenkgrenze in rad. |
-| `horizon` | `256` | Episodenlänge (maximale Schritte pro Episode). |
-| `max_delta` | `0.05` | Max. Gelenkwinkel-Änderung pro Step in rad (≈ 2.8°). |
-| `k_axis` | `1.0` | Skalenfaktor für PCA-Ellipsenachsen. |
-| `w_area` | `1.0` | Gewicht für Flächenanteil im dense Reward (im aktuellen Reward-Code nicht explizit multipliziert). |
-| `w_close` | `0.05` | Gewicht der terminalen Closure-Strafe. |
-| `w_close_dense` | `0.05` | Gewicht des dense Closure-Terms während der Episode. |
-| `w_degen` | `0.1` | Gewicht der terminalen Degenerationsstrafe (kleines Achsenverhältnis). |
-| `w_degen_dense` | `0.01` | Gewicht der dense Degenerationsstrafe während der Episode. |
-| `w_action` | `0.02` | Gewicht der Aktionsenergie-Strafe (`||a||²`) pro Step. |
-| `min_axis_ratio` | `0.35` | Mindestwert für `b/a` (Ellipse), darunter greift Degenerations-Hinge. |
-| `adv_noise_scale` | `0.25` | Stärke der antagonist. Störung relativ zu `max_delta`; effektive Noise-Amplitude = `adv_noise_scale * max_delta` (`0.0125` rad). |
 
-Für reproduzierbare Experimente solltest du diese Parameter pro Run mitprotokollieren (z. B. im Checkpoint-Namen oder in einer Run-Config).
+### Schritt 3 – Ergebnisse visualisieren
 
-### Schritt 2 – Training starten (Single-Env)
+Datei: `scripts/visualize_results.py`
+
+Start:
+
+```bash
+python scripts/visualize_results.py
+```
+
+Erzeugt folgende Plots:
+- finale Trajektorie + PCA-Ellipse,
+- Lernkurven aus `training_log.pt` (oder aus gespeicherten PNGs),
+- Robustheitsplots gegen `adv_noise_scale`.
+
+Parameter:
+
+| Name | Wert | Bedeutung |
+|---|---|---|
+| `SEED` | `0` | Zufallsseed für reproduzierbare Auswertung/Visualisierung. |
+| `EVALUATE_EPISODES_NUM` | `50` | Anzahl der Episoden, über die die Metriken für die Visualisierung gemittelt werden. |
+| `CHECKPOINT` | `checkpoints/20446-episoden/best_by_eval_return.pt` | Pfad zum zu ladenden Modell-Checkpoint für Trajektorie, Lernkurven und Robustheitsplots. |
+
+### Schritt 4 – Modell evaluieren oder rendern
+
+Datei: `scripts/evaluate.py`
+
+Oben im Skript einstellen:
+- `MODE = "render"` oder `"eval"`
+- Checkpoint-Pfade
+- Noise-Level-Liste (`adv_noise_scale`)
+
+Start:
+
+```bash
+python scripts/evaluate.py
+```
+
+- `render`: spielt 1 Episode im Environment sichtbar ab (`render_mode="human"`)
+- `eval`: mehrere Noise-Stufen und Ausgabe von Return/Area/Closure/Axis Ratio
+
+
+### Schritt 5 – Training starten
 
 Datei: `scripts/train.py`
 
@@ -96,44 +126,29 @@ Output (in `checkpoints/...`):
 - `training_curve_entropy.png`
 
 
-Die Logik ist analog zu `train.py`, aber mit vectorized Rollouts (`AsyncVectorEnv`) und effektiven Episodenachsen.
 
-### Schritt 3 – Modell evaluieren oder rendern
 
-Datei: `scripts/evaluate.py`
 
-Oben im Skript einstellen:
-- `MODE = "render"` oder `"eval"`
-- Checkpoint-Pfade
-- Noise-Level-Liste (`adv_noise_scale`)
+### Häufige Fehler
 
-Start:
+1. **Falscher `MODE` im Training**
+   - In `train.py` muss `MODE` exakt `"NEU"` oder `"RESUME"` sein.
 
-```bash
-python scripts/evaluate.py
-```
+2. **Ungültiger Checkpoint-Pfad bei Resume/Eval**
+   - Prüfe `RESUME_PATH` bzw. Pfade in `evaluate.py`.
 
-- `render`: spielt 1 Episode mit dem Envornment sichtbar (`render_mode="human"`)
-- `eval`: mehrere Noise-Stufen und Ausgabe von Return/Area/Closure/Axis Ratio
+3. **Render funktioniert nicht auf Headless-System**
+   - `render_mode="human"` braucht grafische Oberfläche.
 
-### Schritt 5 – Ergebnisse visualisieren
+4. **Importprobleme beim direkten Ausführen aus Unterordnern**
+   - Skripte vom Projekt-Root aus starten (`python scripts/...`).
 
-Datei: `scripts/visualize_results.py`
-
-Start:
-
-```bash
-python scripts/visualize_results.py
-```
-
-Erzeugt folgndes Plotts:
-- finale Trajektorie + PCA-Ellipse,
-- Lernkurven aus `training_log.pt` (oder aus gespeicherten PNGs),
-- Robustheitsplots gegen `adv_noise_scale`.
+5. **Unklare Vergleichbarkeit von Runs**
+   - Konfigurationen, Seeds und Noise-Level pro Run protokollieren.
 
 ---
 
-## 4) Prjektstruktur und Komponenten
+## 4) Projektstruktur und Komponenten
 
 ### 1  `finger_env.py`
 
@@ -371,28 +386,82 @@ Final im letzten Schritt:
 
 ### 2 `actor_critic.py`
 
-- `Actor`: Gauß-Policy mit Tanh-Squashing
-- `Critic`: state value function `V(s)`
-- `choose_action(...)` liefert gesampelte Aktion, Log-Prob und Entropie
+- Implementiert die Policy (Actor) und die Zustandswertfunktion (Critic).
+
+#### Actor
+
+- **Eingabe:** Observation mit `obs_dim = 9`.
+- **Netzwerk:** `Linear(9, 128) -> Tanh -> Linear(128, 128) -> Tanh`.
+- **Ausgabe 1 (Mittelwert):** `mu_head: Linear(128, act_dim)` mit `act_dim = 3` (für `Δθ1, Δθ2, Δθ3`).
+- **Ausgabe 2 (Std-Abw.):** globaler, lernbarer Parameter `log_std` mit Form `(3,)`; daraus `std = exp(log_std)`.
+- **Verteilung:** Gauß-Verteilung `Normal(mu, std)` pro Aktionsdimension.
+- **Sampling:** Reparameterisierung via `rsample()` und danach `tanh`-Squashing auf `[-1, 1]`.
+- **choose_action(...):** gibt `(action, log_prob, entropy)` zurück.
+
+| Größe | Form (ein Zustand)
+|---|---|
+| `obs` | `(9,)` | 
+| `mu` | `(3,)` |
+| `std` | `(3,)` |
+| `action = tanh(raw_action)` | `(3,)` |
+
+#### Critic
+
+- **Eingabe:** Observation mit `obs_dim = 9`.
+- **Netzwerk:** `Linear(9, 128) -> Tanh -> Linear(128, 128) -> Tanh -> Linear(128, 1)`.
+- **Ausgabe:** Zustandswert `V(s)` als Skalar (durch `squeeze(-1)`).
+
+| Größe | Form (ein Zustand)
+|---|---|
+| `obs` | `(9,)` |
+| `V(s)` | `()` |
 
 ### 3 `rollout.py`
 
-- sammeln Trainingsdaten bei 256 Schritten bzw. einer Episode für Actor-Critic-Update
+- Sammelt Trainingsdaten für ein Actor-Critic-Update über maximal `horizon = 256` Schritte.
+
+#### Ablauf in `collect_rollout(...)`
+
+1. `env.reset()` liefert Startzustand `obs`.
+2. Pro Schritt:
+   - Actor erzeugt Aktion, Log-Prob und Entropie.
+   - Critic schätzt `V(s)`.
+   - Aktion wird von `[-1,1]` auf `[-max_delta, +max_delta]` skaliert.
+   - `env.step(action)` liefert `next_obs, reward, terminated, truncated, info`.
+   - Alle Größen werden in Listen gespeichert.
+3. Bei `terminated` oder `truncated` wird der Rollout beendet.
+4. Listen werden in Tensoren umgewandelt und als `rollout`-Dictionary zurückgegeben.
+
+#### Rückgabe-Tensoren
+
+| Key | Bedeutung | Form |
+|---|---|---|
+| `obs` | Beobachtungen | `(T, 9)` |
+| `actions` | ausgeführte Aktionen (skaliert) | `(T, 3)` |
+| `rewards` | Rewards pro Schritt | `(T,)` |
+| `log_probs` | Log-Wahrscheinlichkeiten der Aktionen | `(T,)` |
+| `values` | Critic-Schätzung `V(s_t)` | `(T,)` |
+| `entropies` | Policy-Entropie pro Schritt | `(T,)` |
+| `dones` | Episodenende-Flags (`0/1`) | `(T,)` |
+| `last_info` | letztes `info` aus dem Env | `dict` |
+
+`T` ist die tatsächlich gelaufene Schrittlänge und erfüllt `1 <= T <= horizon`.
 
 ### 4 `train.py`
 
 - Monte-Carlo Returns
 - Advantage-Normalisierung
 - getrennte Optimierer für Actor/Critic
-- regelmäßige Evaluation via `evaluate(...)`
+- regelmäßige Evaluation während des Trainings über eine bestimmte Anzahl von Episoden mithilfe von `evaluate(...)`
 - Speichern von Best-/Last-Checkpoints + Trainingslog + Kurvenplots
 
 ### 5 `evaluate.py`
-   Evaluiert eine Policy über bestimmte Anzahl von Episoden `EVALUATE_EPISODES_NUM = 50`
-   mit einem bestimmten seed `SEED = 5
-- lädt Checkpoint (`actor_state_dict`, `critic_state_dict`, `config`)
-- spielt Episoden deterministisch über `tanh(mu)`
-- aggregiert Metriken über mehrere Episoden
+- Zwei Modi über den Parameter `MODE`: `"render"` oder `"eval"`.
+- `render`-Mode: spielt genau **eine** Episode mit den aktuellen Hyperparametern sichtbar ab.
+- `eval`-Mode: evaluiert die Policy über mehrere Episoden (z. B. `EVALUATE_EPISODES_NUM = 50`) und über mehrere Noise-Level.
+- Im `eval`-Mode können beliebig viele Policies/Checkpoints gemeinsam evaluiert werden (Liste `checkpoints = [...]`).
+- Lädt den Checkpoint (`actor_state_dict`, `critic_state_dict`, `config`) und nutzt deterministische Aktionen über `tanh(mu)`.
+- Im `eval`-Mode werden Metriken (Return, Area, Closure, Axis Ratio) aggregiert und über `visualize_results.py` mit `plot_eval_records(...)` gegeneinander geplottet.
 
 ### 6 `visualize_results.py`
 
@@ -403,19 +472,78 @@ Final im letzten Schritt:
 ---
 
 
-## 5) Häufige Errors
 
-1. **Falscher `MODE` im Training**
-   - In `train.py` muss `MODE` exakt `"NEU"` oder `"RESUME"` sein.
+## 5) Definition von Testszenarien vor dem Training
 
-2. **Ungültiger Checkpoint-Pfad bei Resume/Eval**
-   - Prüfe `RESUME_PATH` bzw. Pfade in `evaluate.py`.
+Für die Bewertung der Policy werden vor dem Training folgende Testszenarien definiert:
 
-3. **Render funktioniert nicht auf Headless-System**
-   - `render_mode="human"` braucht grafische Oberfläche.
+1. **Robustheit-Szenario (Störrauschen)**
+   - Parameter: `adv_noise_scale = [0.0, 0.1, 0.25, 0.5, 0.75]`
+   - Fragestellung: Wie robust ist die gelernte Policy gegenüber antagonistischer Störung auf den Aktionen?
 
-4. **Importprobleme beim direkten Ausführen aus Unterordnern**
-   - Skripte vom Projekt-Root aus starten (`python scripts/...`).
+2. **Evaluierungs-Episoden**
+   - Parameter: `EVALUATE_EPISODES_NUM = [20, 50, 100]`
+   - Fragestellung: Wie stabil sind die gemittelten Metriken (Return, Fläche, Closure, Axis Ratio) in Abhängigkeit von der Anzahl der Evaluierungs-Episoden?
 
-5. **Unklare Vergleichbarkeit von Runs**
-   - Konfigurationen, Seeds und Noise-Level pro Run protokollieren.
+3. **Startzustand über Seeds**
+   - Parameter: `SEED = [0, 2, 5]`
+   - Fragestellung: Wie stark hängt die Performance vom initialen Startzustand bzw. der Zufallsinitialisierung ab?
+
+4. **Änderung der Episodenlänge**
+   - Parameter: `T = [T, T/2, 2T]` mit `T = horizon` aus `EnvConfig`
+   - Fragestellung: Wie verändert sich das Verhalten bei kürzeren/längeren Episoden?
+   - Wichtig: Die Phase `t/T` ist Teil des Observation Space (`phase`) und beeinflusst damit direkt die Policy-Eingabe.
+
+
+## 6) Hyperparameter-Studie
+
+Die Hyperparameter-Studie besteht aus zwei zentralen Teilen: Trainingsparameter und Environment-Parameter.
+
+### Training-Parameter
+
+Die final verwendeten Training-Hyperparameter (aus `scripts/train.py`) sind:
+
+| Name | Wert | Bedeutung |
+|---|---:|---|
+| `EPISODEN` | `20500` | Anzahl der Trainings-Episoden. |
+| `GAMMA` | `0.99` | Diskontfaktor für Monte-Carlo-Returns. |
+| `ACTOR_LR` | `0.0003` | Lernrate des Actor-Optimierers. |
+| `CRITIC_LR` | `0.0003` | Lernrate des Critic-Optimierers. |
+| `hidden_dim` | `128` | Breite der Hidden Layer in Actor und Critic. |
+| `ENTROPY_COEF` | `0.0025` | Gewicht des Entropie-Bonus zur Förderung von Exploration. |
+| `VALUE_COEF` | `0.5` | Gewichtung des Critic-Loss im Value-Update. |
+
+**`CRITIC_LR`**
+
+Zur Stabilisierung bzw. für eine schnellere Reaktion der Value-Schätzung wurde testweise `CRITIC_LR = 0.0001` verwendet.
+Dabei zeigte sich jedoch, dass die Entropie im Training zu schnell in den negativen Bereich fällt, wodurch die Policy zu früh deterministisch wird (zu wenig Exploration). Daher wurde `CRITIC_LR` auf `0.0003` gesetzt.
+
+**`ENTROPY_COEF`**
+
+Zu Beginn wurde `ENTROPY_COEF = 0.001` verwendet, was zu einem Entropie-Kollaps führte.
+Die Entropie fiel sehr schnell in den negativen Bereich, wodurch keine ausreichende Exploration der Policy mehr stattfand. Mit `ENTROPY_COEF = 0.0025` nähert sich die Entropie dem Wert 0 erst nach ungefähr 19.000 Episoden.
+
+**`hidden_dim`**
+
+Die Größe der neuronalen Netze für Actor und Critic orientiert sich an der bekannten Referenzumgebung CartPole. Diese besitzt eine Zustandsdimension von vier und einen diskreten Aktionsraum mit zwei möglichen Aktionen. Da die vorliegende Umgebung des anthropomorphen Fingers eine deutlich höhere Zustandsdimension (9 Beobachtungsvariablen) sowie einen kontinuierlichen Aktionsraum mit drei Dimensionen besitzt, wurde die Netzarchitektur entsprechend erweitert. Daher wurden für Actor und Critic jeweils zwei Hidden Layers mit einer Breite von 128 Neuronen gewählt, um ausreichend Modellkapazität bei gleichzeitig stabilem Training zu gewährleisten.
+
+### Environment-Parameter
+**`w_area`**
+Da das Hauptziel des Projekts darin besteht, eine möglichst große Ellipse zu erzeugen, wird dieser Parameter auf `1.0` gesetzt. Dadurch erhält der Flächenanteil den größten Einfluss innerhalb der Reward-Funktion.
+
+
+**`w_close_dense`**
+w_close_dense gewichtet die dichte Strafe für eine nicht geschlossene Trajektorie. Dadurch wird der Agent dazu angehalten, eine periodische Bewegung zu erzeugen, die zum Startpunkt zurückführt, sodass eine konsistente Ellipse besser eingeschlossen werden kann.
+
+Zu Beginn wurde der Parameter auf 0.01 gesetzt, was sich als zu klein erwies, da die Strafe für eine offene Trajektorie kaum Einfluss auf das Lernverhalten hatte. Anschließend wurde der Wert auf 0.1 erhöht, was sich als zu aggressiv herausstellte: Der Agent reduzierte seine Bewegung stark und tendierte dazu, nahezu still zu bleiben, um Strafen zu vermeiden.
+
+Daher wurde schließlich ein Mittelwert von 0.05 gewählt. Dieser Wert stellt einen sinnvollen Kompromiss dar, da er den Agenten ausreichend dazu motiviert, die Trajektorie zu schließen, ohne dabei die Bewegung zu stark zu unterdrücken.
+
+**`w_action`**
+Der Parameter `w_action` gewichtet die Strafe für große Aktionsänderungen und dient als Regularisierung der Bewegung. Dadurch wird der Agent dazu angehalten, gleichmäßigere und energieeffizientere Bewegungen auszuführen, anstatt sehr große oder abrupte Gelenkänderungen zu erzeugen.
+Bei einem Wert von 0.05 tendierte der Agent hier auch dazu, still zu bleiben.
+
+**`min_axis_ratio`**
+Der Parameter `min_axis_ratio` definiert das minimale zulässige Verhältnis der beiden Ellipsenhalbachsen `b/a` und dient dazu, stark degenerierte Ellipsen zu vermeiden. Eine ideale Ellipsenform in dieser Aufgabe weist typischerweise ein Achsenverhältnis von etwa `0.5` auf, während sehr kleine Werte darauf hinweisen, dass die Trajektorie eher linienförmig als elliptisch ist.
+
+Zu Beginn wurde der Parameter auf `0.25` gesetzt. Dieser Wert erwies sich jedoch als zu niedrig, da der Agent Ellipsen mit einem Achsenverhältnis von etwa `0.35` erzeugte, die zwar gültig waren, jedoch teilweise noch zu stark verzerrt waren.
